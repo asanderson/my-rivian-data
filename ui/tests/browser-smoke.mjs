@@ -6,7 +6,7 @@ import path from 'node:path';
 import { chromium } from 'playwright';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-const binary = process.env.RIVIAN_LOCAL_BINARY ?? path.join(root, 'target/release', process.platform === 'win32' ? 'rivian-local.exe' : 'rivian-local');
+const binary = process.env.MY_RIVIAN_DATA_BINARY ?? path.join(root, 'target/release', process.platform === 'win32' ? 'my-rivian-data.exe' : 'my-rivian-data');
 const screenshots = path.join(root, 'artifacts/screenshots');
 await access(binary);
 await mkdir(screenshots, { recursive: true });
@@ -53,7 +53,7 @@ try {
   });
   await page.goto(launchUrl, { waitUntil: 'networkidle' });
   assert.equal(new URL(page.url()).hash, '', 'The launcher fragment must be removed immediately.');
-  await page.getByRole('heading', { name: 'Your garage, on your terms.' }).waitFor();
+  await page.getByRole('heading', { name: 'Your vehicles. Your data.' }).waitFor();
   await page.getByText('Rust/WASM ready', { exact: true }).waitFor();
   const wasmLoaded = await page.evaluate(() => performance.getEntriesByType('resource').some(entry => entry.name.includes('.wasm')));
   assert.equal(wasmLoaded, true, 'The compiled WebAssembly file must actually load.');

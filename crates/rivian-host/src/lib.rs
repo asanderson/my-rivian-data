@@ -77,7 +77,7 @@ impl AppState {
     ) -> std::io::Result<(Self, String)> {
         let secret = random_secret()?;
         let authority = format!("127.0.0.1:{port}");
-        let cookie_name = format!("rivian_local_{port}_{}", &random_secret()?[..16]);
+        let cookie_name = format!("my_rivian_data_{port}_{}", &random_secret()?[..16]);
         Ok((
             Self {
                 inner: Arc::new(Inner {

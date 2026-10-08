@@ -1,6 +1,7 @@
 # Implementation status
 
-Date: 2026-10-08. Milestone: first offline Rust/Axum + React/Rust-WASM prototype.
+Application: My Rivian Data. Date: 2026-10-08.
+Milestone: first offline Rust/Axum + React/Rust-WASM prototype.
 
 ## Implemented
 
@@ -37,9 +38,9 @@ The product does not bundle or depend on that test browser.
 
 Measured artifact sizes for this limited offline workload:
 
-- Linux native executable with embedded assets: 2,408,160 bytes (about 2.30 MiB).
+- Linux native executable with embedded assets: 2,408,352 bytes (about 2.30 MiB).
 - Compiled WASM module: 89,433 bytes (about 87.3 KiB).
-- Built UI asset files, including WASM and bindings: 365,451 bytes (about 357 KiB),
+- Built UI asset files, including WASM and bindings: 365,535 bytes (about 357 KiB),
   already embedded in the executable; do not add them again to its size.
 
 The executable dynamically uses the OS's libc, libm and libgcc_s. This build host

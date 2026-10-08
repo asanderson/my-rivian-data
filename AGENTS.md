@@ -1,5 +1,7 @@
-# Rivian Local
+# My Rivian Data
 
+The project's purpose is to give Rivian owners easy access to the data associated
+with the vehicles they own: "Your vehicles. Your data."
 This is an original implementation of the selected Rust/Axum + React/Rust-WASM plan.
 The first milestone is an offline prototype. Do not claim live Rivian compatibility,
 command execution, official affiliation, independent Anthropic review, or signed
