@@ -9,6 +9,12 @@ cross-platform packages unless the corresponding evidence actually exists.
 
 ## Boundaries
 
+- Keep the default interface and opening documentation owner-focused, grouped by
+  functional area. Put raw API tools and implementation details in the separate
+  developer view and subsequent developer documentation.
+- Label sample readings and missing data honestly; never infer health diagnostics
+  from battery charge or other incomplete telemetry.
+
 - Keep portable models, catalog validation and fixtures in `rivian-core`.
 - `rivian-wasm` wraps the same bounded, non-secret validation logic.
 - Native Rust owns application authority. Revalidate every operation in the host.
