@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "description": "Synthetic, non-secret fixtures for native and real compiled-WASM parity. Operation IDs are local adapter aliases.",
+  "cases": [
+    {"name":"account-valid","operation_id":"account-summary","variables_json":"{}","expected_valid":true},
+    {"name":"list-valid","operation_id":"list-vehicles","variables_json":"{}","expected_valid":true},
+    {"name":"state-valid","operation_id":"vehicle-state","variables_json":"{\"vehicle_id\":\"demo-r1t-001\"}","expected_valid":true},
+    {"name":"second-vehicle-valid","operation_id":"vehicle-state","variables_json":"{\"vehicle_id\":\"demo-r1s-002\"}","expected_valid":true},
+    {"name":"history-limit-min","operation_id":"charging-history","variables_json":"{\"vehicle_id\":\"demo-r1t-001\",\"limit\":1}","expected_valid":true},
+    {"name":"history-limit-max","operation_id":"charging-history","variables_json":"{\"vehicle_id\":\"demo-r1t-001\",\"limit\":100}","expected_valid":true},
+    {"name":"unknown-operation","operation_id":"not-a-real-operation","variables_json":"{}","expected_valid":false},
+    {"name":"foreign-vehicle","operation_id":"vehicle-state","variables_json":"{\"vehicle_id\":\"other-account-vehicle\"}","expected_valid":false},
+    {"name":"missing-vehicle","operation_id":"vehicle-state","variables_json":"{}","expected_valid":false},
+    {"name":"wrong-vehicle-type","operation_id":"vehicle-state","variables_json":"{\"vehicle_id\":10}","expected_valid":false},
+    {"name":"unknown-field","operation_id":"list-vehicles","variables_json":"{\"arbitrary_url\":\"https://invalid.example\"}","expected_valid":false},
+    {"name":"array-root","operation_id":"list-vehicles","variables_json":"[]","expected_valid":false},
+    {"name":"null-root","operation_id":"list-vehicles","variables_json":"null","expected_valid":false},
+    {"name":"malformed-json","operation_id":"list-vehicles","variables_json":"{broken","expected_valid":false},
+    {"name":"fractional-limit","operation_id":"charging-history","variables_json":"{\"vehicle_id\":\"demo-r1t-001\",\"limit\":1.5}","expected_valid":false},
+    {"name":"too-large-limit","operation_id":"charging-history","variables_json":"{\"vehicle_id\":\"demo-r1t-001\",\"limit\":101}","expected_valid":false},
+    {"name":"string-limit","operation_id":"charging-history","variables_json":"{\"vehicle_id\":\"demo-r1t-001\",\"limit\":\"10\"}","expected_valid":false},
+    {"name":"excessive-depth","operation_id":"list-vehicles","variables_json":"{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":0}}}}}}}}","expected_valid":false},
+    {"name":"lock-blocked","operation_id":"lock-vehicle","variables_json":"{\"vehicle_id\":\"demo-r1t-001\"}","expected_valid":false},
+    {"name":"unlock-blocked","operation_id":"unlock-vehicle","variables_json":"{\"vehicle_id\":\"demo-r1t-001\"}","expected_valid":false},
+    {"name":"charge-limit-blocked","operation_id":"set-charge-limit","variables_json":"{\"vehicle_id\":\"demo-r1t-001\",\"limit_percent\":80}","expected_valid":false},
+    {"name":"subscription-planned","operation_id":"telemetry-subscription","variables_json":"{\"vehicle_id\":\"demo-r1t-001\"}","expected_valid":false}
+  ]
+}

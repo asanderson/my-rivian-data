@@ -216,3 +216,19 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Rust/React/WASM prototype
+/target/
+/ui/node_modules/
+/ui/dist/
+/ui/public/wasm/
+/artifacts/
+/test-results/
+/playwright-report/
+*.log
+.DS_Store
+
+
+# Keep source helpers despite the existing generic lib/ ignore.
+!scripts/lib/
+!scripts/lib/**

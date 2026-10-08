@@ -1,0 +1,2 @@
+# Preserve verbatim upstream license notices without source whitespace diagnostics.
+docs/dependency-licenses/** -whitespace linguist-vendored
