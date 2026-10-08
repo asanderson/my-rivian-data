@@ -1,102 +1,69 @@
 # My Rivian Data
 
-**My Rivian Data** aims to give Rivian owners easy access to the data associated with the vehicles they own. **Your vehicles. Your data.** The planned product uses owner-authorized Rivian account access, native API transport and local credential handling. The current milestone is an offline prototype.
+**Your vehicles. Your data.** My Rivian Data aims to give Rivian owners easy access
+to the data associated with the vehicles they own, organized around everyday
+questions about charging, vehicle health and location.
 
-Phase 1 starts with a self-contained Rust/Axum host, a React interface and a real Rust/WASM validation module. This milestone is an **offline feasibility prototype**: it uses synthetic vehicle data, accepts no Rivian credentials, makes no Rivian API requests and cannot send vehicle commands. It is not affiliated with Rivian.
+**The current app is an offline demo.** It shows two fictional vehicles and sample
+data. It does not ask for a Rivian password, connect to your account or vehicle,
+or change vehicle settings. This is an independent community project, not
+affiliated with Rivian.
 
-The native and WASM builds share the same catalog and validation code. The host revalidates every request and owns the local session. The browser module handles bounded, non-secret data. Phase 2 will reuse the native Rust core and React interface in independent Android/iOS Tauri applications, with a native invocation adapter instead of an Axum server on the phone.
+## For vehicle owners
 
-See the [system context and data-flow diagrams](docs/ARCHITECTURE.md#system-context)
-for how the local components work together. All [standalone PNG diagrams and their
-editable sources](docs/diagrams/README.md) are checked in with the documentation.
+Choose a demo vehicle, then explore a familiar area of ownership. No API or JSON
+knowledge is needed for these views.
 
-## Run a built executable
-
-Build from source using the commands below. The GitHub Actions workflow also creates
-unsigned executable artifacts for successful jobs; a workflow definition is not
-evidence that a platform build has passed. Compiled binaries are not committed.
-
-A release build embeds the React assets and WASM module. Consumers need a supported desktop OS and a current browser; they do not need Rust, Node.js, npm or a separate web server. Executables are OS/architecture specific, use normal OS libraries, and are currently unsigned development builds. Installers, signing, supported-OS certification and mobile packages are later milestones.
-
-![My Rivian Data installation and startup: choose a matching build, run the executable and open the local offline workspace](docs/diagrams/installation-startup.png)
-
-On Linux/macOS, set executable permission with `chmod u+x my-rivian-data` if needed, then run `./my-rivian-data`. In Windows PowerShell, run `.\my-rivian-data.exe`. The app binds only to `127.0.0.1`, chooses a free port and opens the default browser. Leave its terminal running; press Ctrl+C to stop it.
-
-```text
-my-rivian-data --help
-my-rivian-data --port 43127
-my-rivian-data --no-open --print-launch-url
-```
-
-`--port 0` chooses a free port (the default). `--no-open` suppresses browser launch. `--print-launch-url` explicitly prints a sensitive, single-use bootstrap link that expires after five minutes; open it locally and keep it out of screenshots, tickets and shared logs. Restart the application to obtain a new link. The normal status URL alone does not authorize a browser session.
-
-## Build from source
-
-Install [Rust through rustup](https://rustup.rs/) and [Node.js 24 or newer with npm](https://nodejs.org/). Rust is pinned to 1.99.0, with rustfmt, clippy and the `wasm32-unknown-unknown` target in `rust-toolchain.toml`.
-
-- **Windows:** use the MSVC Rust toolchain and Visual Studio Build Tools with the C++ desktop workload and Windows SDK. PowerShell works for the commands below.
-- **macOS:** install Xcode Command Line Tools (`xcode-select --install`).
-- **Linux:** install the distribution's native C/C++ compiler and linker (for example, the `build-essential` package on Ubuntu/Debian).
-
-From the project directory, run these same commands on each desktop OS:
-
-```text
-node scripts/setup.mjs
-node scripts/build.mjs
-node scripts/verify.mjs
-```
-
-Setup downloads Cargo dependencies, installs the exact `wasm-bindgen-cli` version recorded in `Cargo.lock` when necessary, and runs `npm ci` against the UI lockfile. It needs internet access and can take several minutes on a fresh machine. Build and verification use the locked dependencies; tools and dependencies still need to be downloaded before an air-gapped build.
-
-The build compiles Rust to WASM, generates its web bindings, bundles the React interface, and then embeds that bundle in the native release binary. The executable appears at `target/release/my-rivian-data` or `target/release/my-rivian-data.exe`. Build after every UI or WASM change so the embedded assets stay current. Build separately on each target operating system/architecture; a Linux executable is not a Windows or macOS package.
-
-![My Rivian Data build pipeline: locked dependencies, Rust/WASM, React bundle, native embedding and verification](docs/diagrams/build-pipeline.png)
-
-The scripts invoke npm's JavaScript entry point through Node without a shell. If an unusual Node installation prevents discovery, set `RIVIAN_NPM_CLI` to the absolute path of its `npm-cli.js`. Cargo's default `target` directory is assumed by the build scripts; do not override `CARGO_TARGET_DIR` for this prototype.
-
-## Verify
-
-`node scripts/verify.mjs` runs formatting checks, the release build, clippy with warnings rejected, workspace tests, TypeScript checking, UI unit tests and native/WASM parity. The parity check runs the **compiled WASM** in Node, compares every checked-in fixture and the catalog with native Rust output, and checks that a 64 MiB memory ceiling is enforced. It can also run alone after a build:
-
-```text
-node scripts/check-parity.mjs
-```
-
-For the real-browser smoke test, install Chromium once and run the UI test script after building the host:
-
-```text
-node ui/node_modules/playwright/cli.js install chromium
-npm run test:browser --prefix ui
-```
-
-On Linux, Playwright may also require distribution packages; `node ui/node_modules/playwright/cli.js install --with-deps chromium` installs those when run with suitable system privileges. The test can use an existing compatible Chromium by setting `PLAYWRIGHT_CHROMIUM_EXECUTABLE` to its executable path. Browser downloads are development/test dependencies, separate from the self-contained application.
-
-The GitHub Actions workflow is configured to run the core checks on Linux, Windows and macOS, run the Chromium smoke test on Linux, and retain unsigned executable artifacts. Configuration is not evidence that those CI jobs have run. Actual results, browser checks, limitations and remaining work belong in [docs/STATUS.md](docs/STATUS.md).
-
-## Project layout
-
-| Path | Responsibility |
+| View | What you can explore in the demo |
 | --- | --- |
-| `crates/rivian-core` | Portable catalog, bounded input validation and synthetic data |
-| `crates/rivian-wasm` | Non-secret WASM exports of the shared core |
-| `crates/rivian-host` | Axum loopback service, local session boundary and embedded assets |
-| `ui` | React/TypeScript interface and native-host HTTP adapter |
-| `fixtures` | Synthetic fixtures consumed by native/WASM verification |
-| `scripts` | Portable dependency setup, build and verification |
-| `docs` | Implementation status and review evidence |
+| **Overview** | Battery level, estimated range, charging state and lock status at a glance |
+| **Charging** | Sample charging status, charge limit and power, plus a history of charging sessions with energy added and duration |
+| **Vehicle health** | Mileage, temperature and lock status; battery health, tire pressure and service records are unavailable |
+| **Location** | Fictional coordinates and sample location accuracy; no map or tracking |
 
-## Security and next milestones
+All values and timestamps are fixed examples, not live vehicle readings.
+Switching vehicles updates the selected vehicle across the owner views.
 
-The local host checks Host/Origin, uses a single-use bootstrap capability and session/CSRF protections, and exposes a bounded operation catalog. WASM linear memory is capped at 64 MiB; this does not cap the browser's total memory. The module does not export credential storage, networking, signing or command execution. These controls reduce specific attack paths; an offline prototype is not evidence of production security. See the review and status records in `docs` for the tested boundary and outstanding findings.
+![My Rivian Data owner overview with fictional vehicle data](docs/screenshots/desktop.png)
 
-Next milestones are a native credential-vault interface and authentication state machine, owner-authorized live read-only API validation, catalog expansion, reviewed command authority, packaging and independent adversarial review. Actual credential entry and live vehicle operations require those implementations and their gates; the demo UI must never solicit account passwords.
+Read the [owner guide](docs/OWNER-GUIDE.md) for a walkthrough, screenshots and help.
 
-This original project code uses the repository's [GNU GPLv3 license](LICENSE) (`GPL-3.0-only`). Third-party dependencies retain their own licenses and [notices](docs/THIRD-PARTY-NOTICES.md). No assertion of a completed independent Anthropic review, live Rivian compatibility, signed release or store acceptance is made by this prototype.
+## Start the demo
 
-## Prototype screenshots
+1. Obtain a development executable matching your operating system and computer
+   architecture. Successful [GitHub Actions](https://github.com/asanderson/my-rivian-data/actions) jobs provide unsigned
+   executable artifacts; extract the downloaded archive. A developer can also
+   [build from source](docs/DEVELOPER-GUIDE.md#build-from-source).
+2. Run it from a terminal: `./my-rivian-data` on Linux/macOS, or
+   `.\my-rivian-data.exe` in Windows PowerShell. On Linux/macOS, run
+   `chmod u+x my-rivian-data` first if needed.
+3. Your default browser opens the local demo. Leave the terminal open while using
+   the app; press Ctrl+C in that terminal to stop it.
 
-All values below are synthetic.
+A built executable contains the whole interface. You need a compatible desktop OS
+and a current browser; you do not need Rust, Node.js, npm or a separate web server.
+These are unsigned development builds. Signed installers, supported-OS
+certification and Android/iOS apps are future milestones. See
+[current validation and limitations](docs/STATUS.md) before choosing a build.
 
-![Desktop prototype](docs/screenshots/desktop.png)
+![Installation and startup: obtain a matching build, run it, then explore the local demo](docs/diagrams/installation-startup.png)
 
-[Mobile-width screenshot](docs/screenshots/mobile.png)
+## Developers
+
+Under **Developer tools**, the separate **API explorer** view exposes the local operation catalog, editable
+request variables and raw requests/responses in a Swagger-like layout. It uses the
+same validation and execution checks as the owner views. It describes this demo's
+local API, not a verified upstream Rivian schema.
+
+Phase 1 uses a native Rust/Axum host with an embedded React interface and a shared
+Rust/WASM validator. Phase 2 plans to reuse the Rust core and React interface in
+Android/iOS Tauri apps, with a native invocation adapter instead of a phone web server.
+
+- [Developer guide: API explorer, setup, build, verification and CI](docs/DEVELOPER-GUIDE.md)
+- [Architecture and design: system context, API boundary and data flow](docs/ARCHITECTURE.md)
+- [Standalone PNG diagrams and editable sources](docs/diagrams/README.md)
+- [Implementation status and next milestones](docs/STATUS.md)
+- [Security review](docs/SECURITY-REVIEW.md)
+
+The original project code uses the [GNU GPLv3 license](LICENSE)
+(`GPL-3.0-only`). Dependencies retain their own [licenses and notices](docs/THIRD-PARTY-NOTICES.md).

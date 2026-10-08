@@ -1,4 +1,6 @@
-# Phase 1 foundation
+# Architecture and design
+
+[Owner guide](OWNER-GUIDE.md) · [Developer setup and API explorer](DEVELOPER-GUIDE.md)
 
 My Rivian Data aims to give Rivian owners easy access to data associated with their
 vehicles. This is milestone 0 of the selected native Rust/Axum + React/Rust-WASM plan.
@@ -19,13 +21,41 @@ access and Tauri mobile apps are shown separately from the working offline syste
 | `rivian-core` | Local operation catalog, normalized synthetic telemetry, bounded validation and read-only demo execution. No I/O or credentials. |
 | `rivian-wasm` | JSON bindings around the same core validator. Browser validation is advisory; Rust revalidates every execution. |
 | `rivian-host` | IPv4 loopback listener, embedded UI/WASM, launcher, local session and CSRF enforcement, typed demo endpoints. |
-| `ui` | React views, operation explorer, native/WASM comparison and bounded response rendering. No persistent browser storage. |
+| `ui` | Owner views, a separate developer API explorer, shared native/WASM comparison and bounded response rendering. No localStorage or sessionStorage. |
 | `fixtures` | Deterministic validation cases shared by native and actual compiled-WASM tests. |
 
 The host embeds `ui/dist` in release builds. Node, Vite, Cargo and wasm-bindgen
 are build tools; the executable does not launch them. It uses an existing browser.
 The core and UI are structured for a later Tauri host adapter. No Axum server is
 intended to run on a phone.
+
+## Presentation and data mapping
+
+Owner views use everyday labels and formatted cards or tables. The developer API
+explorer is a separate navigation destination, with operations grouped by family,
+editable variables, local request JSON and raw response JSON. It is a Swagger-like
+presentation of the local adapter contract, not a verified upstream Rivian schema.
+
+| Owner view | Demo data and local operations | Presentation boundary |
+| --- | --- | --- |
+| Vehicle selection | `/api/vehicles` supplies the two synthetic vehicles at startup | One shared selection across views; no account lookup |
+| Overview | `vehicle-state` | Battery, range, charging and lock readouts |
+| Charging | `charging-status`, `charging-history` | Status cards and a session list; no charge-limit control |
+| Vehicle health | `vehicle-state` | Mileage, temperature and lock status; battery health, tire pressure and service history explicitly unavailable |
+| Location | `vehicle-location` | Fictional coordinates and accuracy; no map service or live tracking |
+| API explorer | The full representative catalog from `/api/catalog` | Request/response JSON and validation details; blocked mutations and planned subscriptions cannot execute |
+
+`ui/src/operations.ts` centralizes bounded variable parsing and WASM/native
+validation comparison. Owner views use `runDemoQuery` to validate, execute and
+check the synthetic response envelope before formatting data. The developer view
+uses the same `validateOperation` check, then retains the explicitly requested
+local execution response and HTTP status for inspection. Session capabilities,
+cookies and CSRF values are not exposed in the explorer.
+
+The initial owner view is Overview. Navigation and selected vehicle live in React
+memory, so reload starts at Overview while the existing local session can resume.
+Switching presentation does not grant different backend privileges. Native
+authorization, revalidation and command restrictions apply equally to both views.
 
 ## Local HTTP contract
 
@@ -59,7 +89,8 @@ consumption atomic. The returned cookie is HttpOnly and SameSite=Strict; the CSR
 token stays in JavaScript memory. Reload uses the local cookie to obtain a fresh
 copy of the session's CSRF token. Logout or process exit requires a new launch.
 
-The diagram's query path follows the current React adapter and native handlers.
+The diagram's query path follows the shared React adapter and native handlers.
+Owners see formatted sample readings; developers inspect request/response JSON.
 Standalone PNGs and editable rendering sources are in [diagrams](diagrams/README.md).
 
 Sessions expire after one idle hour or eight absolute hours. POST handlers check

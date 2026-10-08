@@ -1,11 +1,20 @@
+export interface ApiResponse<T> {
+  body: T;
+  rawBody: string;
+  status: number;
+  durationMs: number;
+}
+
 export class ApiError extends Error {
   status: number;
   code: string;
-  constructor(status: number, code: string, message: string) {
+  response?: ApiResponse<unknown>;
+  constructor(status: number, code: string, message: string, response?: ApiResponse<unknown>) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
     this.code = code;
+    this.response = response;
   }
 }
 
@@ -35,9 +44,10 @@ async function boundedBody(response: Response): Promise<string> {
   return new TextDecoder().decode(merged);
 }
 
-export async function request<T>(path: string, body?: unknown): Promise<T> {
+async function performRequest<T>(path: string, body: unknown, includeErrorResponse: boolean): Promise<ApiResponse<T>> {
   const controller = new AbortController();
   const timer = window.setTimeout(() => controller.abort(), 12_000);
+  const started = performance.now();
   try {
     const response = await fetch(path, {
       method: body === undefined ? 'GET' : 'POST',
@@ -51,22 +61,33 @@ export async function request<T>(path: string, body?: unknown): Promise<T> {
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
-    if (response.status === 204) return undefined as T;
+    if (response.status === 204) return { body: undefined as T, rawBody: '', status: 204, durationMs: Math.round(performance.now() - started) };
     const raw = await boundedBody(response);
     let payload: unknown;
     try { payload = JSON.parse(raw); }
     catch { throw new Error('The local service returned an unreadable response. Relaunch the app and try again.'); }
+    const details = { body: payload as T, rawBody: raw, status: response.status, durationMs: Math.round(performance.now() - started) };
     if (!response.ok) {
       const error = (payload as { error?: { code?: string; message?: string } })?.error;
-      throw new ApiError(response.status, error?.code ?? 'request_failed', error?.message ?? 'The local request could not be completed.');
+      throw new ApiError(response.status, error?.code ?? 'request_failed', error?.message ?? 'The local request could not be completed.', includeErrorResponse ? details : undefined);
     }
-    return payload as T;
+    return details;
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') {
       throw new Error('The local service took too long to respond. Check that the app is still running.');
     }
     throw error;
   } finally { window.clearTimeout(timer); }
+}
+
+/** Normal application requests do not retain raw error bodies. */
+export async function request<T>(path: string, body?: unknown): Promise<T> {
+  return (await performRequest<T>(path, body, false)).body;
+}
+
+/** Developer inspection of an explicitly requested local response; never includes headers. */
+export async function requestWithDetails<T>(path: string, body?: unknown): Promise<ApiResponse<T>> {
+  return performRequest<T>(path, body, true);
 }
 
 export async function startSession(bootstrapToken: string | null): Promise<void> {

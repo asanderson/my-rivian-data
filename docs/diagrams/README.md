@@ -7,10 +7,10 @@ as color. Planned live Rivian access and mobile apps are explicitly marked as fu
 
 | Diagram | What it explains | Embedded in |
 | --- | --- | --- |
-| [System context](system-context.png) | Owner, computer, browser, native host, and planned integrations | [Architecture](../ARCHITECTURE.md#system-context) |
-| [Data flow](data-flow.png) | Bootstrap, session, WASM/native validation, and synthetic responses | [Architecture](../ARCHITECTURE.md#session-sequence) |
-| [Build pipeline](build-pipeline.png) | Locked setup, WASM bindings, UI bundle, embedded native executable, and verification | [README](../../README.md#build-from-source) |
-| [Installation and startup](installation-startup.png) | Source/artifact paths, platform matching, launch, and local browser use | [README](../../README.md#run-a-built-executable) |
+| [System context](system-context.png) | Owner views and developer API explorer, computer, native host, and planned integrations | [Architecture](../ARCHITECTURE.md#system-context) |
+| [Data flow](data-flow.png) | Bootstrap, shared WASM/native validation, synthetic responses, and owner/developer presentations | [Architecture](../ARCHITECTURE.md#session-sequence) |
+| [Build pipeline](build-pipeline.png) | Locked setup, WASM bindings, UI bundle, embedded native executable, and verification | [Developer guide](../DEVELOPER-GUIDE.md#build-from-source) |
+| [Installation and startup](installation-startup.png) | Source/artifact paths, platform matching, launch, and local owner views | [Owner guide](../OWNER-GUIDE.md#get-started), [README](../../README.md#start-the-demo) |
 
 ## Edit and regenerate
 

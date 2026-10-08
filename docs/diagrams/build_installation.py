@@ -152,15 +152,15 @@ def installation_startup():
     diagram.arrow([(600, 895), (600, 935)])
     diagram.box(
         175, 935, 850, 105,
-        "Explore synthetic vehicle data",
-        "No Rivian credentials, live account requests or vehicle commands.\n"
-        "Press Ctrl+C in the terminal to stop the host; restart for a new launch link.",
+        "Explore the owner views",
+        "Overview · Charging · Vehicle health · Location\n"
+        "Open API explorer separately under Developer tools.",
         fill=GREEN,
     )
     diagram.text(
         175, 1070,
         "Your vehicles. Your data.\n"
-        "The current prototype demonstrates the interface and local security boundary.",
+        "Fixed sample data only. Press Ctrl+C in the terminal to stop the app.",
         size=18,
     )
     diagram.footer("Source: README.md, crates/rivian-host/src/main.rs and .github/workflows/verify.yml")
