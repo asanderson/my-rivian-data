@@ -1,0 +1,15 @@
+[package]
+name = "rivian-wasm"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Non-secret WebAssembly validation for the Rivian local prototype"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+rivian-core = { path = "../rivian-core" }
+serde_json.workspace = true
+wasm-bindgen.workspace = true

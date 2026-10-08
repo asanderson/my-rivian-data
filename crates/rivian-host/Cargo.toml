@@ -1,0 +1,30 @@
+[package]
+name = "rivian-host"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "rivian-local"
+path = "src/main.rs"
+
+[dependencies]
+rivian-core = { path = "../rivian-core" }
+serde.workspace = true
+serde_json.workspace = true
+axum = "0.8"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "signal", "sync", "time"] }
+getrandom = "0.3"
+subtle = "2.6"
+rust-embed = "8"
+mime_guess = "2"
+webbrowser = "1"
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"
+futures-util = "0.3"

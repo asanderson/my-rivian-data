@@ -1,0 +1,21 @@
+[workspace]
+members = ["crates/rivian-core", "crates/rivian-wasm", "crates/rivian-host"]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+publish = false
+license = "GPL-3.0-only"
+
+[workspace.dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "2.0"
+wasm-bindgen = "0.2"
+serde-wasm-bindgen = "0.6"
+
+[profile.release]
+lto = false
+codegen-units = 1
+strip = true
