@@ -1,10 +1,14 @@
-# my-rivian-data
+# My Rivian Data
 
-**Rivian Local** is the working application name for this project. The planned product retrieves a registered user's Rivian data using native API transport and local credential handling. The current milestone is an offline prototype.
+**My Rivian Data** aims to give Rivian owners easy access to the data associated with the vehicles they own. **Your vehicles. Your data.** The planned product uses owner-authorized Rivian account access, native API transport and local credential handling. The current milestone is an offline prototype.
 
 Phase 1 starts with a self-contained Rust/Axum host, a React interface and a real Rust/WASM validation module. This milestone is an **offline feasibility prototype**: it uses synthetic vehicle data, accepts no Rivian credentials, makes no Rivian API requests and cannot send vehicle commands. It is not affiliated with Rivian.
 
 The native and WASM builds share the same catalog and validation code. The host revalidates every request and owns the local session. The browser module handles bounded, non-secret data. Phase 2 will reuse the native Rust core and React interface in independent Android/iOS Tauri applications, with a native invocation adapter instead of an Axum server on the phone.
+
+See the [system context and data-flow diagrams](docs/ARCHITECTURE.md#system-context)
+for how the local components work together. All [standalone PNG diagrams and their
+editable sources](docs/diagrams/README.md) are checked in with the documentation.
 
 ## Run a built executable
 
@@ -14,12 +18,14 @@ evidence that a platform build has passed. Compiled binaries are not committed.
 
 A release build embeds the React assets and WASM module. Consumers need a supported desktop OS and a current browser; they do not need Rust, Node.js, npm or a separate web server. Executables are OS/architecture specific, use normal OS libraries, and are currently unsigned development builds. Installers, signing, supported-OS certification and mobile packages are later milestones.
 
-On Linux/macOS, run `./rivian-local`. On Windows, run `rivian-local.exe`. The app binds only to `127.0.0.1`, chooses a free port and opens the default browser. Leave its terminal running; press Ctrl+C to stop it.
+![My Rivian Data installation and startup: choose a matching build, run the executable and open the local offline workspace](docs/diagrams/installation-startup.png)
+
+On Linux/macOS, set executable permission with `chmod u+x my-rivian-data` if needed, then run `./my-rivian-data`. In Windows PowerShell, run `.\my-rivian-data.exe`. The app binds only to `127.0.0.1`, chooses a free port and opens the default browser. Leave its terminal running; press Ctrl+C to stop it.
 
 ```text
-rivian-local --help
-rivian-local --port 43127
-rivian-local --no-open --print-launch-url
+my-rivian-data --help
+my-rivian-data --port 43127
+my-rivian-data --no-open --print-launch-url
 ```
 
 `--port 0` chooses a free port (the default). `--no-open` suppresses browser launch. `--print-launch-url` explicitly prints a sensitive, single-use bootstrap link that expires after five minutes; open it locally and keep it out of screenshots, tickets and shared logs. Restart the application to obtain a new link. The normal status URL alone does not authorize a browser session.
@@ -42,7 +48,9 @@ node scripts/verify.mjs
 
 Setup downloads Cargo dependencies, installs the exact `wasm-bindgen-cli` version recorded in `Cargo.lock` when necessary, and runs `npm ci` against the UI lockfile. It needs internet access and can take several minutes on a fresh machine. Build and verification use the locked dependencies; tools and dependencies still need to be downloaded before an air-gapped build.
 
-The build compiles Rust to WASM, generates its web bindings, bundles the React interface, and then embeds that bundle in the native release binary. The executable appears at `target/release/rivian-local` or `target/release/rivian-local.exe`. Build after every UI or WASM change so the embedded assets stay current. Build separately on each target operating system/architecture; a Linux executable is not a Windows or macOS package.
+The build compiles Rust to WASM, generates its web bindings, bundles the React interface, and then embeds that bundle in the native release binary. The executable appears at `target/release/my-rivian-data` or `target/release/my-rivian-data.exe`. Build after every UI or WASM change so the embedded assets stay current. Build separately on each target operating system/architecture; a Linux executable is not a Windows or macOS package.
+
+![My Rivian Data build pipeline: locked dependencies, Rust/WASM, React bundle, native embedding and verification](docs/diagrams/build-pipeline.png)
 
 The scripts invoke npm's JavaScript entry point through Node without a shell. If an unusual Node installation prevents discovery, set `RIVIAN_NPM_CLI` to the absolute path of its `npm-cli.js`. Cargo's default `target` directory is assumed by the build scripts; do not override `CARGO_TARGET_DIR` for this prototype.
 

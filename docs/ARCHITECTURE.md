@@ -1,8 +1,16 @@
 # Phase 1 foundation
 
-This is milestone 0 of the selected native Rust/Axum + React/Rust-WASM plan.
+My Rivian Data aims to give Rivian owners easy access to data associated with their
+vehicles. This is milestone 0 of the selected native Rust/Axum + React/Rust-WASM plan.
 It is an offline, credential-free prototype. Its six queries return synthetic
 fixtures. The catalog's subscriptions and mutations cannot execute.
+
+## System context
+
+The current app and its data stay on the owner's computer. Planned Rivian account
+access and Tauri mobile apps are shown separately from the working offline system.
+
+![My Rivian Data system context: owner, local browser, native host and planned integrations](diagrams/system-context.png)
 
 ## Source boundaries
 
@@ -42,12 +50,17 @@ local identifiers, not verified upstream Rivian GraphQL operation names.
 
 ## Session sequence
 
+![My Rivian Data data flow: one-use bootstrap, local session, WASM and native validation, then synthetic query response](diagrams/data-flow.png)
+
 The launcher creates a random 256-bit capability with a five-minute lifetime and
 opens the browser with it in a URL fragment. The UI removes the fragment before
 rendering, then sends the capability in a same-origin POST. A mutex makes bootstrap
 consumption atomic. The returned cookie is HttpOnly and SameSite=Strict; the CSRF
 token stays in JavaScript memory. Reload uses the local cookie to obtain a fresh
 copy of the session's CSRF token. Logout or process exit requires a new launch.
+
+The diagram's query path follows the current React adapter and native handlers.
+Standalone PNGs and editable rendering sources are in [diagrams](diagrams/README.md).
 
 Sessions expire after one idle hour or eight absolute hours. POST handlers check
 session validity again after body extraction, preventing a delayed request admitted

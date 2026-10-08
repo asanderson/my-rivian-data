@@ -16,14 +16,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "--print-launch-url" => print_launch_url = true,
             "--version" => {
                 println!(
-                    "Rivian Local {} (offline prototype)",
+                    "My Rivian Data {} (offline prototype)",
                     env!("CARGO_PKG_VERSION")
                 );
                 return Ok(());
             }
             "--help" | "-h" => {
                 println!(
-                    "Rivian Local - offline prototype\n\nUsage: rivian-local [--port NUMBER] [--no-open] [--print-launch-url]\n\nDefault: random IPv4 loopback port; opens your browser.\n--print-launch-url explicitly prints a sensitive, single-use, five-minute link.\nThis build does not accept Rivian credentials or contact Rivian."
+                    "My Rivian Data - offline prototype\nYour vehicles. Your data.\n\nUsage: my-rivian-data [--port NUMBER] [--no-open] [--print-launch-url]\n\nDefault: random IPv4 loopback port; opens your browser.\n--print-launch-url explicitly prints a sensitive, single-use, five-minute link.\nThis build does not accept Rivian credentials or contact Rivian."
                 );
                 return Ok(());
             }
@@ -34,7 +34,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         tokio::net::TcpListener::bind(SocketAddrV4::new(Ipv4Addr::LOCALHOST, port)).await?;
     let (state, bootstrap) = AppState::new(listener.local_addr()?.port())?;
     let launch_url = format!("{}/#bootstrap={bootstrap}", state.origin());
-    println!("Rivian Local: offline demo at {}", state.origin());
+    println!("My Rivian Data: offline demo at {}", state.origin());
     if print_launch_url {
         println!("Launch URL (keep private): {launch_url}");
     }

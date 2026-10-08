@@ -38,7 +38,7 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { failed: boolean
   static getDerivedStateFromError() { return { failed: true }; }
   componentDidCatch(_error: Error, _info: ErrorInfo) { /* Never log request data or session material. */ }
   render() {
-    if (this.state.failed) return <main className="fatal"><Icon name="alert" /><h1>The interface could not continue.</h1><p>Close this page and relaunch Rivian Local to start a fresh session.</p></main>;
+    if (this.state.failed) return <main className="fatal"><Icon name="alert" /><h1>The interface could not continue.</h1><p>Close this page and relaunch My Rivian Data to start a fresh session.</p></main>;
     return this.props.children;
   }
 }
@@ -104,7 +104,7 @@ function App() {
         if (mounted) {
           setSession('error');
           setSessionError(error instanceof ApiError && error.status === 401
-            ? 'This browser session is missing or has expired. Relaunch Rivian Local and use the page it opens.'
+            ? 'This browser session is missing or has expired. Relaunch My Rivian Data and use the page it opens.'
             : errorMessage(error));
         }
       }
@@ -121,7 +121,7 @@ function App() {
 
   function handleRequestError(error: unknown) {
     if (error instanceof ApiError && error.status === 401) {
-      clearSession(); setSession('error'); setSessionError('Your session has expired. Relaunch Rivian Local to continue.');
+      clearSession(); setSession('error'); setSessionError('Your session has expired. Relaunch My Rivian Data to continue.');
     } else setProblem(errorMessage(error));
   }
 
@@ -178,7 +178,7 @@ function App() {
   return <div className="app-shell">
     <a className="skip-link" href="#main">Skip to main content</a>
     <aside className="sidebar" aria-label="Application navigation">
-      <a className="brand" href="#main" aria-label="Rivian Local home"><span className="brand-mark"><Icon name="leaf" /></span><span>Rivian <strong>Local</strong><small>YOUR VEHICLES. YOUR DEVICE.</small></span></a>
+      <a className="brand" href="#main" aria-label="My Rivian Data home"><span className="brand-mark"><Icon name="leaf" /></span><span>My Rivian <strong>Data</strong><small>YOUR VEHICLES. YOUR DATA.</small></span></a>
       <div className="nav-caption">WORKSPACE</div>
       <nav><a className="nav-link active" href="#garage"><Icon name="grid" />Overview<span className="nav-dot" /></a><a className="nav-link" href="#explorer"><Icon name="code" />API explorer</a></nav>
       <div className="sidebar-note"><span className="sidebar-note-icon"><Icon name="shield" /></span><h2>It stays local.</h2><p>This prototype runs on your device and uses synthetic vehicle data.</p><span className="sidebar-status"><span className="status-dot" />Offline demo</span></div>
@@ -188,8 +188,8 @@ function App() {
     <div className="main-shell">
       <header className="topbar"><span className="breadcrumb">Workspace <span>/</span> Overview</span><div className="topbar-right"><span className="mode-badge"><span className="status-dot" />Offline demo</span>{session === 'ready' && <button className="end-session" aria-label="End session" onClick={() => void logout()} disabled={disabled}><Icon name="out" /><span>{busy === 'logout' ? 'Ending…' : 'End session'}</span></button>}</div></header>
       <main id="main" tabIndex={-1}>
-        {session !== 'ready' ? <section className="session-panel" aria-live="polite"><span className="intro-icon"><Icon name={session === 'loading' ? 'leaf' : 'lock'} /></span><p className="eyebrow">RIVIAN LOCAL</p><h1>{session === 'loading' ? 'Opening your local workspace…' : session === 'ended' ? 'Your session has ended.' : 'Open a fresh local session.'}</h1><p>{session === 'loading' ? 'Connecting to the app on this device.' : session === 'ended' ? 'Relaunch Rivian Local to open the offline demo again.' : sessionError}</p><p className="muted">No Rivian account is connected. Real authentication is planned for a later milestone.</p></section> : <>
-          <section className="intro" aria-labelledby="page-title"><div><p className="eyebrow">A LITTLE CLOSER TO YOUR VEHICLE</p><h1 id="page-title">Your garage, on your terms.</h1><p>Explore your vehicles and the API from one private, local workspace.</p></div><span className="prototype-pill">Phase 1 · Prototype</span></section>
+        {session !== 'ready' ? <section className="session-panel" aria-live="polite"><span className="intro-icon"><Icon name={session === 'loading' ? 'leaf' : 'lock'} /></span><p className="eyebrow">MY RIVIAN DATA</p><h1>{session === 'loading' ? 'Opening your local workspace…' : session === 'ended' ? 'Your session has ended.' : 'Open a fresh local session.'}</h1><p>{session === 'loading' ? 'Connecting to the app on this device.' : session === 'ended' ? 'Relaunch My Rivian Data to open the offline demo again.' : sessionError}</p><p className="muted">No Rivian account is connected. Real authentication is planned for a later milestone.</p></section> : <>
+          <section className="intro" aria-labelledby="page-title"><div><p className="eyebrow">BECAUSE IT’S YOUR DATA</p><h1 id="page-title">Your vehicles. Your data.</h1><p>Built for easy access to the data from the Rivian vehicles you own.</p></div><span className="prototype-pill">Phase 1 · Prototype</span></section>
           <div className="demo-notice"><Icon name="shield" /><p><strong>Take a look around. This is an offline demo.</strong> Every vehicle and response is synthetic. No credentials are collected, and vehicle controls are disabled.</p></div>
 
           <section id="garage" className="garage" aria-labelledby="garage-title"><div className="section-heading"><div><h2 id="garage-title">Your garage <span className="count-pill">{vehicles.length}</span></h2><p>Sample vehicles to explore the experience.</p></div><span className="quiet-meta">DEMO DATA · NOT LIVE</span></div><div className="vehicle-grid">{vehicles.map((vehicle, index) => <VehicleCard key={vehicle.id} vehicle={vehicle} index={index} />)}</div></section>
@@ -208,7 +208,7 @@ function App() {
                 <div className="request-footer"><span>Local operation: <code>{selected.id}</code></span>{sourceUrl && <a href={sourceUrl} target="_blank" rel="noreferrer noopener">Community API reference ↗<span className="sr-only"> (opens in a new tab)</span></a>}</div></> : <p className="no-results">No operations are available in this build.</p>}</div>
             </div>
           </section>
-          <footer className="page-footer"><span><Icon name="lock" />Local session · No cloud connection</span><span>Rivian Local is an independent, unofficial project.</span></footer>
+          <footer className="page-footer"><span><Icon name="lock" />Local session · No cloud connection</span><span>My Rivian Data is an independent, unofficial project.</span></footer>
         </>}
       </main>
     </div>

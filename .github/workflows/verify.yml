@@ -38,9 +38,9 @@ jobs:
       - name: Upload unsigned prototype executable
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: rivian-local-${{ matrix.os }}-unsigned
+          name: my-rivian-data-${{ matrix.os }}-unsigned
           path: |
-            target/release/rivian-local
-            target/release/rivian-local.exe
+            target/release/my-rivian-data
+            target/release/my-rivian-data.exe
           if-no-files-found: error
           retention-days: 7
