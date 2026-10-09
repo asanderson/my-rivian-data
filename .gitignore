@@ -232,3 +232,6 @@ __marimo__/
 # Keep source helpers despite the existing generic lib/ ignore.
 !scripts/lib/
 !scripts/lib/**
+
+# Atomic diagram-render intermediates
+/docs/diagrams/*.png.tmp

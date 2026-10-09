@@ -1,4 +1,4 @@
-//! A deliberately offline, deterministic prototype core.
+//! Portable operation validation, live data normalization, and deterministic demo data.
 //!
 //! Catalog IDs are local adapter names, not claims about Rivian's upstream API.
 //! This crate performs no I/O, handles no credentials, and sends no commands.
@@ -7,6 +7,8 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use thiserror::Error;
+
+pub mod live;
 
 pub const MAX_VARIABLE_BYTES: usize = 16 * 1024;
 pub const MAX_VARIABLE_DEPTH: usize = 8;
@@ -85,7 +87,7 @@ impl ValidationResult {
 pub enum CoreError {
     #[error("Unknown local operation")]
     UnknownOperation,
-    #[error("Operation is disabled in the offline prototype")]
+    #[error("Operation is not available in this mode")]
     OperationDisabled,
     #[error("Request variables failed validation")]
     InvalidRequest,

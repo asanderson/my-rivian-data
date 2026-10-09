@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/rivian-core", "crates/rivian-wasm", "crates/rivian-host"]
+members = ["crates/rivian-core", "crates/rivian-wasm", "crates/rivian-api", "crates/rivian-host"]
 resolver = "2"
 
 [workspace.package]

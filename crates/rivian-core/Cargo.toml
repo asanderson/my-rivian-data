@@ -4,9 +4,10 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 publish.workspace = true
-description = "Offline Rivian prototype catalog, validation, and synthetic telemetry"
+description = "Portable Rivian catalog, validation, normalization, and synthetic telemetry"
 
 [dependencies]
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
+time = { version = "0.3", default-features = false, features = ["parsing"] }

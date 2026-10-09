@@ -21,7 +21,7 @@ class Diagram:
         self.scale = 2
         self.image = Image.new("RGB", (width * 2, height * 2), PAPER)
         self.draw = ImageDraw.Draw(self.image)
-        self.text(40, 30, "MY RIVIAN DATA  /  OFFLINE PROTOTYPE", size=14, color=MUTED)
+        self.text(40, 30, "MY RIVIAN DATA  /  PHASE 1", size=14, color=MUTED)
         self.text(40, 63, title, size=32, bold=True)
         self.text(40, 111, subtitle, size=18, color=MUTED)
 
@@ -90,5 +90,7 @@ class Diagram:
 
     def save(self):
         destination = Path(__file__).parent / self.filename
-        self.image.save(destination, optimize=True)
+        temporary = destination.with_suffix(".png.tmp")
+        self.image.save(temporary, format="PNG", optimize=True)
+        temporary.replace(destination)
         return destination

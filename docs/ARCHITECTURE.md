@@ -2,152 +2,172 @@
 
 [Owner guide](OWNER-GUIDE.md) · [Developer setup and API explorer](DEVELOPER-GUIDE.md)
 
-My Rivian Data aims to give Rivian owners easy access to data associated with their
-vehicles. This is milestone 0 of the selected native Rust/Axum + React/Rust-WASM plan.
-It is an offline, credential-free prototype. Its six queries return synthetic
-fixtures. The catalog's subscriptions and mutations cannot execute.
+Phase 1 is a standalone native Rust/Axum service with an embedded React interface
+and shared Rust/WASM validation. In its default live mode, native Rust signs in to
+the unofficial Rivian API and performs admitted read operations. `--demo` selects
+credential-free synthetic data through the same presentation and validation
+boundaries. These modes cannot be switched by an API request.
 
 ## System context
 
-The current app and its data stay on the owner's computer. Planned Rivian account
-access and Tauri mobile apps are shown separately from the working offline system.
+The owner runs one executable and uses an existing browser. Only the native
+transport contacts Rivian. No project-operated cloud backend, database, browser
+extension or external map service is required.
 
-![My Rivian Data system context: owner, local browser, native host and planned integrations](diagrams/system-context.png)
+![System context: owner browser, local native app and outbound Rivian API](diagrams/system-context.png)
 
 ## Source boundaries
 
 | Component | Responsibility |
 | --- | --- |
-| `rivian-core` | Local operation catalog, normalized synthetic telemetry, bounded validation and read-only demo execution. No I/O or credentials. |
-| `rivian-wasm` | JSON bindings around the same core validator. Browser validation is advisory; Rust revalidates every execution. |
-| `rivian-host` | IPv4 loopback listener, embedded UI/WASM, launcher, local session and CSRF enforcement, typed demo endpoints. |
-| `ui` | Owner views, a separate developer API explorer, shared native/WASM comparison and bounded response rendering. No localStorage or sessionStorage. |
-| `fixtures` | Deterministic validation cases shared by native and actual compiled-WASM tests. |
+| `rivian-core` | Portable operation definitions, bounded validation, live response normalization and deterministic demo fixtures; no network I/O or credentials |
+| `rivian-wasm` | Non-secret bindings around shared input validation; its decision is advisory |
+| `rivian-host` | IPv4 loopback listener, embedded UI, launcher, local session enforcement, account-owned vehicle authorization and native request dispatch |
+| `rivian-api` | Fixed HTTPS destination, sign-in/MFA state, native memory-only session tokens, bounded replies and sanitized errors |
+| `ui` | Owner views, separate API explorer, local sign-in form, shared validation comparison and bounded response rendering |
+| `fixtures` | Synthetic conformance inputs used by native and compiled-WASM tests |
 
-The host embeds `ui/dist` in release builds. Node, Vite, Cargo and wasm-bindgen
-are build tools; the executable does not launch them. It uses an existing browser.
-The core and UI are structured for a later Tauri host adapter. No Axum server is
-intended to run on a phone.
+The executable embeds `ui/dist`. Node, Vite, Cargo and wasm-bindgen are build tools,
+not runtime subprocesses. Later Tauri applications can reuse the portable core,
+transport and React components with a native invocation adapter; no Axum server is
+intended to run on Android or iOS.
 
 ## Presentation and data mapping
 
-Owner views use everyday labels and formatted cards or tables. The developer API
-explorer is a separate navigation destination, with operations grouped by family,
-editable variables, local request JSON and raw response JSON. It is a Swagger-like
-presentation of the local adapter contract, not a verified upstream Rivian schema.
-
-| Owner view | Demo data and local operations | Presentation boundary |
+| Owner view | Local operation or route | Presentation boundary |
 | --- | --- | --- |
-| Vehicle selection | `/api/vehicles` supplies the two synthetic vehicles at startup | One shared selection across views; no account lookup |
-| Overview | `vehicle-state` | Battery, range, charging and lock readouts |
-| Charging | `charging-status`, `charging-history` | Status cards and a session list; no charge-limit control |
-| Vehicle health | `vehicle-state` | Mileage, temperature and lock status; battery health, tire pressure and service history explicitly unavailable |
-| Location | `vehicle-location` | Fictional coordinates and accuracy; no map service or live tracking |
-| API explorer | The full representative catalog from `/api/catalog` | Request/response JSON and validation details; blocked mutations and planned subscriptions cannot execute |
+| Account sign-in | `/api/account/login`, `/api/account/otp` | Credentials and verification codes are transient input; upstream tokens are never returned |
+| Vehicle selection | `/api/vehicles` | Vehicles obtained from the signed-in account; native authorization retains the allowed IDs |
+| Overview | `vehicle-state` | Available battery, range, charging and lock readings |
+| Charging | `charging-status`, `charging-history` | Reported status and available session history; no setting changes |
+| Vehicle health | `vehicle-state` | Available mileage, temperature and lock status; no invented diagnostics |
+| Location | `vehicle-location` | Reported coordinates and accuracy; no external map or tracking |
+| API explorer | `/api/catalog`, `/api/validate`, `/api/execute` | Admitted operations and request/response details; no arbitrary URL or GraphQL submission |
 
-`ui/src/operations.ts` centralizes bounded variable parsing and WASM/native
-validation comparison. Owner views use `runDemoQuery` to validate, execute and
-check the synthetic response envelope before formatting data. The developer view
-uses the same `validateOperation` check, then retains the explicitly requested
-local execution response and HTTP status for inspection. Session capabilities,
-cookies and CSRF values are not exposed in the explorer.
+The API explorer uses local adapter IDs such as `charging-history`. Exact upstream
+operation names, source documents and support status are documented separately in
+[API coverage](API-COVERAGE.md). It is a Swagger-like interface, not a generated
+OpenAPI client or a complete Rivian schema.
 
-The initial owner view is Overview. Navigation and selected vehicle live in React
-memory, so reload starts at Overview while the existing local session can resume.
-Switching presentation does not grant different backend privileges. Native
-authorization, revalidation and command restrictions apply equally to both views.
+Owner normalization preserves missing fields as unavailable. Receipt time must
+not silently replace a vehicle's observation time. Authentication errors and
+unknown source envelopes stop rendering instead of producing demo fallbacks.
+View/vehicle changes invalidate older responses; ending a session removes the
+active data views. Changing presentations never changes backend privileges.
 
 ## Local HTTP contract
 
-All requests require the exact `127.0.0.1:PORT` Host. A supplied Origin must match
-the application's exact HTTP origin, and unsafe methods require that Origin.
-Cross-site and same-site fetch metadata are rejected; there is no CORS allowlist.
+Every request must use the exact `127.0.0.1:PORT` Host. A supplied Origin must match
+the exact application origin; unsafe requests require it. Cross-site and same-site
+cross-origin fetch metadata are rejected. There is no permissive CORS policy.
 
-| Route | Method | Access | Result |
-| --- | --- | --- | --- |
-| `/api/health` | GET | Exact local origin boundary | Build version and demo status only |
-| `/api/bootstrap` | POST | Single-use launcher capability | HttpOnly local cookie and CSRF token |
-| `/api/session` | GET | Local session | CSRF token and remaining absolute lifetime |
-| `/api/catalog` | GET | Local session | Representative operation definitions |
-| `/api/vehicles` | GET | Local session | Two explicitly synthetic vehicles |
-| `/api/validate` | POST | Session + CSRF | Bounded native validation |
-| `/api/execute` | POST | Session + CSRF | Revalidated, read-only synthetic query result |
-| `/api/logout` | POST | Session + CSRF | Session revoked, cookie expired |
+After bootstrap, **every protected request**, including session recovery, requires
+both the local HttpOnly cookie and `x-app-capability`. Unsafe requests also require
+the separate CSRF value. A host-scoped cookie alone cannot recover or use a session.
 
-There are no endpoints for credentials, arbitrary URLs, shell commands, generic
-GraphQL, signing, filesystem access or raw token retrieval. App operation IDs are
-local identifiers, not verified upstream Rivian GraphQL operation names.
+| Route | Method | Result |
+| --- | --- | --- |
+| `/api/health` | GET | Nonsensitive build/mode information; no account access |
+| `/api/bootstrap` | POST | Consume one-use launcher capability and issue local session material |
+| `/api/session` | GET | Recover local CSRF/session state only with cookie and application capability |
+| `/api/account` | GET | Sanitized account authentication state |
+| `/api/account/login` | POST | Start native live sign-in; rejected in demo mode |
+| `/api/account/otp` | POST | Complete pending verification without exposing upstream tokens |
+| `/api/account/logout` | POST | Discard the current native account session |
+| `/api/catalog` | GET | Admitted operation definitions and support metadata |
+| `/api/vehicles` | GET | Account vehicles in live mode; synthetic vehicles in demo mode |
+| `/api/validate` | POST | Bounded native validation |
+| `/api/execute` | POST | Reauthorize, revalidate and execute an admitted read |
+| `/api/logout` | POST | Revoke the local session, discard account state and expire its cookie |
+
+Only health and bootstrap are exempt from local session requirements. There are
+no shell, arbitrary filesystem, generic proxy, signing or token-read routes.
 
 ## Session sequence
 
-![My Rivian Data data flow: one-use bootstrap, local session, WASM and native validation, then synthetic query response](diagrams/data-flow.png)
+![Launch, sign in, validate a read, authorize the selected vehicle and query Rivian](diagrams/data-flow.png)
 
 The launcher creates a random 256-bit capability with a five-minute lifetime and
-opens the browser with it in a URL fragment. The UI removes the fragment before
-rendering, then sends the capability in a same-origin POST. A mutex makes bootstrap
-consumption atomic. The returned cookie is HttpOnly and SameSite=Strict; the CSRF
-token stays in JavaScript memory. Reload uses the local cookie to obtain a fresh
-copy of the session's CSRF token. Logout or process exit requires a new launch.
+opens a browser URL containing it in a fragment. The UI scrubs the fragment before
+rendering and exchanges it in a same-origin POST. Bootstrap is consumed atomically.
+The returned local session cookie is HttpOnly, host-only and SameSite=Strict.
 
-The diagram's query path follows the shared React adapter and native handlers.
-Owners see formatted sample readings; developers inspect request/response JSON.
-Standalone PNGs and editable rendering sources are in [diagrams](diagrams/README.md).
+A separate random application capability is stored in the tab's origin-scoped
+`sessionStorage` and sent explicitly on every protected request. Cookies have no
+port isolation, but this capability is not automatically sent to another local
+port. `/api/session` requires it as well; possession of a cookie alone does not
+reissue it. CSRF state stays in memory. Local logout revokes server state and clears
+the tab capability. Session restore is a browser behavior, not a secure erasure
+guarantee; the user should end the session explicitly.
 
-Sessions expire after one idle hour or eight absolute hours. POST handlers check
-session validity again after body extraction, preventing a delayed request admitted
-before logout from executing afterward. Future network operations must reauthorize
-at their actual dispatch point too.
+Local sessions have one-hour idle and eight-hour absolute limits. POST handlers
+recheck authorization after body extraction. Account transport and vehicle
+ownership are tied to the local session so stale requests cannot acquire a new
+account implicitly. Backend execution remains authoritative even if browser/WASM
+validation is bypassed.
 
-The prototype uses HTTP strictly on loopback. Cookies have no port isolation;
-another same-user service on `127.0.0.1` or a compromised browser/OS can undermine
-this boundary. Random cookie names avoid collisions, not that threat. Resolve the
-live-mode local-service trust policy before adding real credentials or commands.
+## Native account and outbound boundary
 
-The default launcher does not print the secret. `--print-launch-url` is a deliberate
-manual/headless escape hatch: its output is a temporary credential. Do not redirect
-it into logs, screenshots, bug reports or shared transcripts.
+The password and verification code are sent transiently from the local form to
+native Rust. Native Rust makes fixed-destination TLS requests to Rivian. Passwords
+are not saved; Rivian tokens remain in native process memory and are excluded from
+all browser responses, fixture files and diagnostic logs. There is no persistence
+or OS vault adapter in this release. Remembered sessions require a separate,
+reviewed secure-storage implementation.
+
+Authentication implements the community-documented CSRF/app-session exchange,
+password login and OTP flow. Session renewal follows observed upstream behavior;
+the presence of a field named `refreshToken` does not justify inventing a token
+exchange. If a user session is rejected, the owner must sign in again. See
+[coverage and provenance](API-COVERAGE.md) for the exact evidence and limitations.
+
+The client admits only fixed operation documents and destinations. Vehicle reads
+must target an identifier returned for the authenticated account, independently
+of WASM checks. Redirects and transport errors must not expose a token, password,
+upstream body or arbitrary URL. Read responses are size-bounded. Authentication
+and failed operations are not blindly retried.
+
+`--demo` performs no external requests and accepts no account credentials. Failed
+live reads never fall back to synthetic data.
 
 ## Bounds and defense in depth
 
-- HTTP JSON request bodies: 32 KiB. Variable JSON: 16 KiB, depth 8, at most 256 values.
-- WASM linear memory: linker maximum 64 MiB, tested by attempting excess growth.
-- Browser response reader: 1 MiB; requests abort after 12 seconds.
-- Exact operation and variable admission, fixed demo account/vehicle IDs, bounded
-  range checks and no mutation execution.
-- CSP permits bundled scripts and narrow WASM evaluation only; no remote code,
-  unsafe HTML insertion or general `unsafe-eval`.
-- Responses include `no-store`, `nosniff`, no-referrer, frame prevention and
-  cross-origin resource/opener isolation headers.
-- Static path aliases, traversal and dotfiles are rejected before asset lookup,
-  including when rust-embed reads source assets in a debug build.
+- HTTP JSON request bodies: 32 KiB. Variables: 16 KiB, depth 8, at most 256 values.
+- WASM linear memory: maximum 64 MiB; this does not limit browser process memory.
+- Upstream reply: at most 1 MiB. Browser adapter envelope: at most 3 MiB; request cancellation has a finite timeout.
+- Exact operation admission, explicit variable schemas and native vehicle ownership checks.
+- Restrictive CSP with bundled code and narrow WASM evaluation; no remote scripts,
+  unsafe HTML rendering or general JavaScript `unsafe-eval`.
+- `no-store`, `nosniff`, no-referrer, frame prevention and cross-origin isolation headers.
+- Static traversal, encoded path aliases and dotfiles rejected before asset lookup.
+- No active signed vehicle commands, enrollment or WebSocket subscriptions.
 
-The UI's parity indicator does not authorize execution. Native validation always
-remains the authority. Synthetic fixture times are deliberately fixed and labeled;
-they are never represented as current vehicle status.
+These controls assume a trusted OS and browser. A compromised same-origin script,
+extension with page access, debugger or OS account can steal transient inputs and
+local capabilities. Memory-only storage is not protection against process memory,
+swap or crash-dump inspection. See the [security review](SECURITY-REVIEW.md).
 
-## Next integration milestones
+## Delivery and later phases
 
-1. Admit the full known operation inventory with source/version, exact upstream
-   documents, capability prerequisites, test status and sanitized fixtures.
-2. Implement native Rivian transport with reviewed destinations, verified TLS,
-   timeouts, bounded replies, GraphQL error handling and rate-aware retries.
-3. Implement username/email, password and MFA state machines behind mock transport
-   tests; add desktop OS vault adapters before allowing remembered sessions.
-4. Prove real read-only account/vehicle requests with user-supplied access through
-   the local app, then authenticated WebSocket/Parallax telemetry.
-5. Prove authorized enrollment and signing before selectively enabling commands;
-   never retry an ambiguous command blindly or copy another phone's secrets.
-6. Complete Windows/macOS/Linux clean-install, update, signing and compatibility
-   checks. Produce consumer installers after the native transport/security gates.
-7. Complete independent Anthropic review and remediation before release. Build
-   Tauri mobile shells only after the phase-1 release milestone; early compile/vault
-   feasibility spikes can validate reuse assumptions sooner.
+The build pipeline bundles Rust/WASM, React and the native host into an OS-specific
+executable. Packages include owner documentation, license notices, SHA-256
+checksums and corresponding source. The checksums detect a changed archive; they
+are not a digital signature. Three-OS CI and local mock tests do not establish
+real-account compatibility or a supported desktop OS baseline.
+
+Remaining release work includes owner-run live acceptance, clean-machine startup
+on each target, measured resource budgets, signed installers/updates, independent
+provider adversarial review and remediation. Extended API coverage needs reviewed
+operation documents and tests. Signed commands, enrollment, subscriptions and
+background collection are separate features. Phase 2 adds Tauri mobile hosts,
+secure storage, app lifecycle handling and device/store validation.
 
 ## References and licensing
 
-Primary sources guiding the implementation: [Axum](https://docs.rs/axum/latest/axum/),
+The executable API contracts are traced in [API coverage](API-COVERAGE.md).
+Framework references: [Axum](https://docs.rs/axum/latest/axum/),
 [wasm-bindgen](https://wasm-bindgen.github.io/wasm-bindgen/),
-[Vite](https://vite.dev/guide/), [rust-embed](https://docs.rs/rust-embed/latest/rust_embed/),
-[RivDocs](https://rivian-api.kaedenb.org/app/), and the saved project plan.
-This source is original; no GPL implementation was copied. The project uses the repository's GNU GPLv3 license (`GPL-3.0-only`).
-Dependencies retain their own licenses.
+[Vite](https://vite.dev/guide/) and
+[rust-embed](https://docs.rs/rust-embed/latest/rust_embed/).
+Original project code is GPL-3.0-only; dependencies retain their own licenses and
+[notices](THIRD-PARTY-NOTICES.md).

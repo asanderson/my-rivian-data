@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { chargeLabel, readChargingHistory, readChargingStatus, readVehicleLocation, readVehicleState, sampleDate } from '../src/owner-data.ts';
+import { chargeLabel, lockLabel, ownerNumber, readChargingHistory, readChargingStatus, readVehicleLocation, readVehicleState, sampleDate } from '../src/owner-data.ts';
 
 const id = 'sample-vehicle';
 const status = { vehicle_id: id, state: 'charging', battery_percent: 48, limit_percent: 80, power_kw: 7.2 };
@@ -34,10 +34,29 @@ test('owner state and location reject malformed samples rather than inventing mi
 });
 test('sample dates remain absolute UTC and unknown charging states are unavailable', () => {
   assert.equal(sampleDate('2026-01-01T12:00:00Z'), 'Jan 1, 2026, 12:00 PM UTC');
-  assert.equal(sampleDate('invalid'), 'Sample date unavailable');
+  assert.equal(sampleDate('invalid'), 'Date unavailable');
   assert.equal(chargeLabel('charging'), 'Charging');
   assert.equal(chargeLabel('not_charging'), 'Not charging');
   for (const state of ['unrecognized_upstream_state', '__proto__', 'constructor', 'toString']) {
     assert.equal(chargeLabel(state), 'Charging state unavailable');
   }
+});
+
+test('live missing readings stay unavailable, never become zero or unlocked', () => {
+  const live = { ...vehicle, source: 'live', battery_percent: null, model_year: null, estimated_range_km: null, odometer_km: null, temperature_celsius: null, locked: null, location: null, observed_at: null };
+  assert.deepEqual(readVehicleState({ vehicle: live }, id, 'live'), live);
+  assert.equal(ownerNumber(null), 'Unavailable');
+  assert.equal(lockLabel(null), 'Lock status unavailable');
+  assert.equal(lockLabel(false), 'Unlocked');
+  assert.deepEqual(readVehicleLocation({ vehicle_id: id, location: null }, id, 'live'), { vehicle_id: id, location: null });
+  assert.throws(() => readVehicleState({ vehicle: { ...live, battery_percent: -1 } }, id, 'live'));
+  assert.throws(() => readVehicleState({ vehicle: { ...live, source: 'synthetic-demo' } }, id, 'live'));
+  assert.throws(() => readVehicleState({ vehicle: { ...live, locked: undefined } }, id, 'live'));
+});
+test('live history accepts explicit missing readings but not an incorrectly assigned vehicle', () => {
+  const live = { ...history, sessions: [{ ...session, started_at: null, energy_kwh: null, duration_minutes: null }] };
+  assert.deepEqual(readChargingHistory(live, id, 'live'), live);
+  assert.throws(() => readChargingHistory(live, 'other-vehicle', 'live'));
+  assert.throws(() => readChargingHistory({ ...live, sessions: [{ ...session, duration_minutes: -1 }] }, id, 'live'));
+  assert.throws(() => readVehicleLocation({ vehicle_id: id, location: { latitude: 91, longitude: 0, accuracy_m: null } }, id, 'live'));
 });

@@ -18,8 +18,23 @@ fn main() {
             json!({"name": case["name"], "result": result})
         })
         .collect();
+    let live_fixture: Value =
+        serde_json::from_str(include_str!("../../../fixtures/live-validation-cases.json"))
+            .expect("live fixture JSON");
+    let live_cases: Vec<Value> = live_fixture["cases"]
+        .as_array()
+        .expect("live cases")
+        .iter()
+        .map(|case| {
+            let result = rivian_core::live::validate_json_request(
+                case["operation_id"].as_str().expect("operation id"),
+                case["variables_json"].as_str().expect("JSON input"),
+            );
+            json!({"name": case["name"], "result": result})
+        })
+        .collect();
     println!(
         "{}",
-        serde_json::to_string(&json!({"cases": cases, "catalog": rivian_core::catalog()})).unwrap()
+        serde_json::to_string(&json!({"cases": cases, "catalog": rivian_core::catalog(), "live_cases": live_cases, "live_catalog": rivian_core::live::catalog()})).unwrap()
     );
 }

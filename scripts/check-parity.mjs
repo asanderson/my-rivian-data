@@ -19,6 +19,16 @@ main(async () => {
     assert.equal(result.valid, item.expected_valid, `Expected validity: ${item.name}`);
   }
   assert.deepEqual(JSON.parse(wasm.catalog_json()), native.catalog, 'Native/WASM catalog parity');
+  const liveFixture = JSON.parse(readFileSync(path.join(root, 'fixtures/live-validation-cases.json'), 'utf8'));
+  assert.equal(liveFixture.schema_version, 1);
+  assert.equal(native.live_cases.length, liveFixture.cases.length);
+  for (const [index, item] of liveFixture.cases.entries()) {
+    const result = JSON.parse(wasm.validate_live_request_json(item.operation_id, item.variables_json));
+    assert.equal(native.live_cases[index].name, item.name, 'Native live fixture ordering');
+    assert.deepEqual(result, native.live_cases[index].result, `Native/WASM live parity: ${item.name}`);
+    assert.equal(result.valid, item.expected_valid, `Expected live validity: ${item.name}`);
+  }
+  assert.deepEqual(JSON.parse(wasm.live_catalog_json()), native.live_catalog, 'Native/WASM live catalog parity');
   // Reach the 64 MiB ceiling, then prove that one additional page is refused.
   // This checks the compiled module's limit rather than trusting its build flags.
   assert.ok(exports.memory instanceof WebAssembly.Memory, 'Module must expose its memory for the cap check');
@@ -27,5 +37,5 @@ main(async () => {
   exports.memory.grow(1024 - pages);
   assert.equal(exports.memory.buffer.byteLength, 64 * 1024 * 1024);
   assert.throws(() => exports.memory.grow(1), RangeError, '64 MiB linker memory limit must be enforced');
-  console.log(`Compiled native/WASM parity passed: ${fixture.cases.length} fixtures, catalog and 64 MiB memory cap.`);
+  console.log(`Compiled native/WASM parity passed: ${fixture.cases.length} demo fixtures, ${liveFixture.cases.length} live fixtures, both catalogs and 64 MiB memory cap.`);
 });

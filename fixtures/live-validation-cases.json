@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "cases": [
+    {"name":"live-account","operation_id":"account-summary","variables_json":"{}","expected_valid":true},
+    {"name":"live-real-vehicle-id","operation_id":"vehicle-state","variables_json":"{\"vehicle_id\":\"b18f756c-e420-47fa-856f-b2d4de906f6e\"}","expected_valid":true},
+    {"name":"live-history-limit","operation_id":"charging-history","variables_json":"{\"vehicle_id\":\"vehicle-1\",\"limit\":100}","expected_valid":true},
+    {"name":"live-no-browser-query","operation_id":"vehicle-state","variables_json":"{\"vehicle_id\":\"vehicle-1\",\"query\":\"mutation Test\"}","expected_valid":false},
+    {"name":"live-no-browser-url","operation_id":"vehicle-state","variables_json":"{\"vehicle_id\":\"vehicle-1\",\"url\":\"https://example.com\"}","expected_valid":false},
+    {"name":"live-id-required","operation_id":"vehicle-state","variables_json":"{}","expected_valid":false},
+    {"name":"live-id-no-path","operation_id":"vehicle-state","variables_json":"{\"vehicle_id\":\"../vehicle\"}","expected_valid":false},
+    {"name":"live-id-no-whitespace","operation_id":"vehicle-state","variables_json":"{\"vehicle_id\":\"vehicle 1\"}","expected_valid":false},
+    {"name":"live-limit-bounded","operation_id":"charging-history","variables_json":"{\"vehicle_id\":\"vehicle-1\",\"limit\":101}","expected_valid":false},
+    {"name":"live-unlock-blocked","operation_id":"unlock-vehicle","variables_json":"{\"vehicle_id\":\"vehicle-1\"}","expected_valid":false},
+    {"name":"live-stream-blocked","operation_id":"telemetry-subscription","variables_json":"{\"vehicle_id\":\"vehicle-1\"}","expected_valid":false},
+    {"name":"live-no-arbitrary-operation","operation_id":"deleteAccount","variables_json":"{}","expected_valid":false},
+    {"name":"live-no-array","operation_id":"account-summary","variables_json":"[]","expected_valid":false},
+    {"name":"live-no-token-variables","operation_id":"account-summary","variables_json":"{\"u-sess\":\"secret\"}","expected_valid":false},
+    {"name":"live-invalid-json","operation_id":"account-summary","variables_json":"{","expected_valid":false}
+  ]
+}

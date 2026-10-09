@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
-import { runDemoQuery } from '../src/operations.ts';
+import { runDemoQuery, runQuery } from '../src/operations.ts';
 import type { WasmModule } from '../src/domain.ts';
 
 Object.defineProperty(globalThis, 'window', { value: globalThis, configurable: true });
@@ -38,4 +38,22 @@ test('owner queries retain the fixed sample timestamp alongside their data', asy
   assert.deepEqual(await runDemoQuery(wasm, 'charging-status', { vehicle_id: 'demo-r1t-001' }), {
     data: demo.data.data, observedAt: demo.data.observed_at,
   });
+});
+
+test('live queries use live WASM validation and retain receipt time separately from unknown observation time', async () => {
+  const received = '2026-10-09T12:00:00Z';
+  const liveWasm: WasmModule = { ...wasm, validate_request_json: () => { throw new Error('Demo validator must not run'); }, validate_live_request_json: () => JSON.stringify(valid) };
+  const live = { mode: 'live', data: { ...demo.data, synthetic: false, source: 'rivian', observed_at: null, received_at: received } };
+  globalThis.fetch = async path => new Response(JSON.stringify(path === '/api/validate' ? valid : live));
+  assert.deepEqual(await runQuery(liveWasm, 'charging-status', { vehicle_id: 'live-vehicle' }, 'live'), { data: live.data.data, observedAt: null, receivedAt: received });
+  for (const bad of [{ ...live, mode: 'demo' }, { ...live, data: { ...live.data, source: 'synthetic-demo' } }, { ...live, data: { ...live.data, received_at: null } }]) {
+    globalThis.fetch = async path => new Response(JSON.stringify(path === '/api/validate' ? valid : bad));
+    await assert.rejects(runQuery(liveWasm, 'charging-status', { vehicle_id: 'live-vehicle' }, 'live'), /Rivian response format/);
+  }
+});
+test('missing live validator never falls back to permissive demo validation', async () => {
+  let calls = 0;
+  globalThis.fetch = async () => { calls++; return new Response('{}'); };
+  await assert.rejects(runQuery(wasm, 'charging-status', {}, 'live'), /validator did not load/);
+  assert.equal(calls, 0);
 });

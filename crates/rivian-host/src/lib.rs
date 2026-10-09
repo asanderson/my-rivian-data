@@ -1,6 +1,6 @@
 #![forbid(unsafe_code)]
 
-//! Loopback-only application host. This milestone has no Rivian network adapter.
+//! Loopback-only application host with an isolated native Rivian session per launcher.
 
 use axum::{
     Json, Router,
@@ -33,6 +33,7 @@ pub struct AppState {
 }
 
 struct Inner {
+    demo: bool,
     authority: String,
     origin: String,
     cookie_name: String,
@@ -54,13 +55,33 @@ struct Bootstrap {
 struct Session {
     secret: String,
     csrf: String,
+    capability: String,
+    client: Option<Arc<rivian_api::LiveClient>>,
     created_at: Instant,
     last_used: Instant,
+}
+
+impl Drop for Session {
+    fn drop(&mut self) {
+        if let Some(client) = &self.client {
+            client.revoke();
+        }
+    }
 }
 
 impl AppState {
     /// Returns a single-use launcher capability. Never log it in ordinary operation.
     pub fn new(port: u16) -> std::io::Result<(Self, String)> {
+        Self::with_mode_and_lifetimes(
+            port,
+            false,
+            Duration::from_secs(300),
+            Duration::from_secs(3600),
+            Duration::from_secs(8 * 3600),
+        )
+    }
+
+    pub fn new_demo(port: u16) -> std::io::Result<(Self, String)> {
         Self::with_lifetimes(
             port,
             Duration::from_secs(300),
@@ -69,8 +90,25 @@ impl AppState {
         )
     }
 
+    /// Configurable demo lifetimes for deterministic boundary tests.
     pub fn with_lifetimes(
         port: u16,
+        bootstrap_lifetime: Duration,
+        session_idle: Duration,
+        session_lifetime: Duration,
+    ) -> std::io::Result<(Self, String)> {
+        Self::with_mode_and_lifetimes(
+            port,
+            true,
+            bootstrap_lifetime,
+            session_idle,
+            session_lifetime,
+        )
+    }
+
+    fn with_mode_and_lifetimes(
+        port: u16,
+        demo: bool,
         bootstrap_lifetime: Duration,
         session_idle: Duration,
         session_lifetime: Duration,
@@ -81,6 +119,7 @@ impl AppState {
         Ok((
             Self {
                 inner: Arc::new(Inner {
+                    demo,
                     origin: format!("http://{authority}"),
                     authority,
                     cookie_name,
@@ -103,6 +142,43 @@ impl AppState {
         &self.inner.origin
     }
 
+    fn mode(&self) -> &'static str {
+        if self.inner.demo { "demo" } else { "live" }
+    }
+
+    /// Release native credentials on expiry even when the browser stops requesting data.
+    pub fn expire_sessions(&self) {
+        if let Ok(mut auth) = self.inner.auth.lock() {
+            let now = Instant::now();
+            if auth.session.as_ref().is_some_and(|session| {
+                now.duration_since(session.created_at) >= self.inner.session_lifetime
+                    || now.duration_since(session.last_used) >= self.inner.session_idle
+            }) {
+                auth.session = None;
+            }
+        }
+    }
+
+    fn live_client(
+        &self,
+        headers: &HeaderMap,
+        csrf: bool,
+    ) -> Result<Arc<rivian_api::LiveClient>, ApiError> {
+        self.session_info(headers, csrf)?;
+        if self.inner.demo {
+            return Err(ApiError {
+                status: StatusCode::BAD_REQUEST,
+                code: "demo_mode",
+                message: "Rivian account access is unavailable in sample mode. Restart without --demo to sign in.",
+            });
+        }
+        let auth = self.inner.auth.lock().map_err(|_| ApiError::internal())?;
+        auth.session
+            .as_ref()
+            .and_then(|s| s.client.clone())
+            .ok_or_else(ApiError::unauthorized)
+    }
+
     fn session_info(&self, headers: &HeaderMap, require_csrf: bool) -> Result<Value, ApiError> {
         let provided =
             cookie_value(headers, &self.inner.cookie_name).ok_or_else(ApiError::unauthorized)?;
@@ -115,7 +191,13 @@ impl AppState {
             auth.session = None;
             return Err(ApiError::unauthorized());
         }
-        if !secret_matches(&session.secret, provided) {
+        // A localhost cookie is not isolated by port. Require an independent,
+        // origin-scoped tab capability on ALL protected requests, including recovery.
+        let capability =
+            single_header(headers, "x-app-capability").ok_or_else(ApiError::unauthorized)?;
+        if !secret_matches(&session.capability, capability)
+            || !secret_matches(&session.secret, provided)
+        {
             return Err(ApiError::unauthorized());
         }
         if require_csrf {
@@ -126,7 +208,7 @@ impl AppState {
         }
         session.last_used = now;
         Ok(json!({
-            "mode": "demo",
+            "mode": self.mode(),
             "csrf_token": session.csrf,
             "expires_in_seconds": self.inner.session_lifetime.saturating_sub(now.duration_since(session.created_at)).as_secs(),
         }))
@@ -203,7 +285,7 @@ impl ApiError {
         Self {
             status: StatusCode::BAD_REQUEST,
             code: "invalid_operation",
-            message: "The operation or its variables are invalid, unavailable or blocked in demo mode.",
+            message: "The operation or its variables are invalid or unavailable.",
         }
     }
 }
@@ -224,6 +306,10 @@ pub fn app(state: AppState) -> Router {
         .route("/api/bootstrap", post(bootstrap))
         .route("/api/session", get(session))
         .route("/api/logout", post(logout))
+        .route("/api/account", get(account))
+        .route("/api/account/login", post(account_login))
+        .route("/api/account/otp", post(account_otp))
+        .route("/api/account/logout", post(account_logout))
         .route("/api/catalog", get(catalog))
         .route("/api/vehicles", get(vehicles))
         .route("/api/validate", post(validate))
@@ -299,8 +385,8 @@ async fn boundary(State(state): State<AppState>, request: Request, next: Next) -
     next.run(request).await
 }
 
-async fn health() -> Json<Value> {
-    Json(json!({"status": "ok", "mode": "demo", "version": env!("CARGO_PKG_VERSION")}))
+async fn health(State(state): State<AppState>) -> Json<Value> {
+    Json(json!({"status": "ok", "mode": state.mode(), "version": env!("CARGO_PKG_VERSION")}))
 }
 
 #[derive(Deserialize)]
@@ -326,6 +412,14 @@ async fn bootstrap(
     let session = Session {
         secret: random_secret().map_err(|_| ApiError::internal())?,
         csrf: random_secret().map_err(|_| ApiError::internal())?,
+        capability: random_secret().map_err(|_| ApiError::internal())?,
+        client: if state.inner.demo {
+            None
+        } else {
+            Some(Arc::new(
+                rivian_api::LiveClient::new().map_err(|_| ApiError::internal())?,
+            ))
+        },
         created_at: now,
         last_used: now,
     };
@@ -333,7 +427,7 @@ async fn bootstrap(
         "{}={}; HttpOnly; SameSite=Strict; Path=/",
         state.inner.cookie_name, session.secret
     );
-    let body = json!({"csrf_token": session.csrf, "mode": "demo", "expires_in_seconds": state.inner.session_lifetime.as_secs()});
+    let body = json!({"csrf_token": session.csrf, "app_capability": session.capability, "mode": state.mode(), "expires_in_seconds": state.inner.session_lifetime.as_secs()});
     // The same mutex protects both consumption and session creation, including races.
     auth.bootstrap = None;
     auth.session = Some(session);
@@ -352,7 +446,8 @@ async fn session(
     Ok(Json(state.session_info(&headers, false)?))
 }
 
-async fn logout(State(state): State<AppState>) -> Result<Response, ApiError> {
+async fn logout(State(state): State<AppState>, headers: HeaderMap) -> Result<Response, ApiError> {
+    state.session_info(&headers, true)?;
     state
         .inner
         .auth
@@ -371,11 +466,142 @@ async fn logout(State(state): State<AppState>) -> Result<Response, ApiError> {
     Ok(response)
 }
 
-async fn catalog() -> Json<Value> {
-    Json(json!(rivian_core::catalog()))
+async fn catalog(State(state): State<AppState>) -> Json<Value> {
+    if state.inner.demo {
+        return Json(json!(rivian_core::catalog()));
+    }
+    // Expose the reviewed upstream document, never native headers, tokens or
+    // account-resolved variables. These specifications contain no credentials.
+    let entries: Vec<Value> = rivian_core::live::catalog()
+        .into_iter()
+        .map(|operation| {
+            let specification = rivian_core::live::request(
+                &operation.id,
+                &operation.example_variables,
+                Some("resolved-by-native-client"),
+            );
+            let mut entry = json!(operation);
+            if let Ok(specification) = specification {
+                entry["upstream_operation"] = json!(specification.operation_name);
+                entry["upstream_document"] = json!(specification.query);
+                entry["endpoint"] = json!(specification.endpoint.url());
+            }
+            entry
+        })
+        .collect();
+    Json(json!(entries))
 }
-async fn vehicles() -> Json<Value> {
-    Json(json!(rivian_core::demo_vehicles()))
+async fn vehicles(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Value>, ApiError> {
+    state.session_info(&headers, false)?;
+    if state.inner.demo {
+        return Ok(Json(json!(rivian_core::demo_vehicles())));
+    }
+    let client = state.live_client(&headers, false)?;
+    let result = client.vehicles().await.map_err(upstream_error)?;
+    state.session_info(&headers, false)?;
+    Ok(Json(result))
+}
+
+fn upstream_error(error: rivian_api::ApiError) -> ApiError {
+    let code = error.code();
+    let status = match code {
+        "account_auth_required" => StatusCode::UNAUTHORIZED,
+        "rate_limited" | "login_throttled" => StatusCode::TOO_MANY_REQUESTS,
+        "invalid_input"
+        | "invalid_credentials"
+        | "invalid_otp"
+        | "mfa_required"
+        | "mfa_expired"
+        | "invalid_operation" => StatusCode::BAD_REQUEST,
+        "vehicle_not_owned" => StatusCode::FORBIDDEN,
+        _ => StatusCode::BAD_GATEWAY,
+    };
+    ApiError {
+        status,
+        code,
+        message: error.message(),
+    }
+}
+
+async fn account(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Value>, ApiError> {
+    let client = state.live_client(&headers, false)?;
+    let result = client.status().await;
+    state.session_info(&headers, false)?;
+    Ok(Json(json!(result)))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LoginRequest {
+    email: String,
+    password: String,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct OtpRequest {
+    code: String,
+}
+
+async fn account_login(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<LoginRequest>,
+) -> Result<Json<Value>, ApiError> {
+    let client = state.live_client(&headers, true)?;
+    if body.email.len() > 254
+        || !body.email.contains('@')
+        || body.password.is_empty()
+        || body.password.len() > 1024
+    {
+        return Err(ApiError {
+            status: StatusCode::BAD_REQUEST,
+            code: "invalid_credentials",
+            message: "Enter your Rivian email address and password.",
+        });
+    }
+    let result = client
+        .login(&body.email, &body.password)
+        .await
+        .map_err(upstream_error)?;
+    state.session_info(&headers, true)?;
+    Ok(Json(json!(result)))
+}
+
+async fn account_otp(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<OtpRequest>,
+) -> Result<Json<Value>, ApiError> {
+    let client = state.live_client(&headers, true)?;
+    if !(6..=8).contains(&body.code.len()) || !body.code.bytes().all(|c| c.is_ascii_digit()) {
+        return Err(ApiError {
+            status: StatusCode::BAD_REQUEST,
+            code: "invalid_otp",
+            message: "Enter the verification code from Rivian.",
+        });
+    }
+    let result = client
+        .verify_otp(&body.code)
+        .await
+        .map_err(upstream_error)?;
+    state.session_info(&headers, true)?;
+    Ok(Json(json!(result)))
+}
+
+async fn account_logout(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Value>, ApiError> {
+    let client = state.live_client(&headers, true)?;
+    client.logout().await;
+    state.session_info(&headers, true)?;
+    Ok(Json(json!({"state":"signed_out"})))
 }
 
 #[derive(Deserialize)]
@@ -392,10 +618,12 @@ async fn validate(
 ) -> Result<Json<Value>, ApiError> {
     // Authentication must still hold after potentially slow body extraction.
     state.session_info(&headers, true)?;
-    Ok(Json(json!(rivian_core::validate_request(
-        &body.operation_id,
-        &body.variables
-    ))))
+    let result = if state.inner.demo {
+        rivian_core::validate_request(&body.operation_id, &body.variables)
+    } else {
+        rivian_core::live::validate_request(&body.operation_id, &body.variables)
+    };
+    Ok(Json(json!(result)))
 }
 
 async fn execute(
@@ -404,6 +632,18 @@ async fn execute(
     Json(body): Json<OperationRequest>,
 ) -> Result<Json<Value>, ApiError> {
     state.session_info(&headers, true)?;
+    if !state.inner.demo {
+        if !rivian_core::live::validate_request(&body.operation_id, &body.variables).valid {
+            return Err(ApiError::invalid());
+        }
+        let client = state.live_client(&headers, true)?;
+        let data = client
+            .execute(&body.operation_id, &body.variables)
+            .await
+            .map_err(upstream_error)?;
+        state.session_info(&headers, true)?;
+        return Ok(Json(json!({"data": data, "mode": "live"})));
+    }
     if !rivian_core::validate_request(&body.operation_id, &body.variables).valid {
         return Err(ApiError::invalid());
     }

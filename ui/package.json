@@ -11,7 +11,7 @@
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
     "test": "node --experimental-strip-types --test tests/*.test.ts",
-    "test:browser": "node tests/browser-smoke.mjs"
+    "test:browser": "node tests/browser-smoke.mjs && node tests/live-browser-smoke.mjs"
   },
   "dependencies": {
     "react": "19.3.0",

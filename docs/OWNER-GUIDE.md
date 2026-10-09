@@ -2,104 +2,142 @@
 
 [Project overview](../README.md) · [Developer guide](DEVELOPER-GUIDE.md)
 
-**Your vehicles. Your data.** My Rivian Data is being built to make the information
-associated with your Rivian vehicles easy to understand and use.
+**Your vehicles. Your data.** My Rivian Data runs on your computer and requests
+available information directly from Rivian. The owner interface groups that
+information around everyday questions. A separate developer view is available
+for people who want to inspect individual requests.
 
-The current version is an **offline demo**. It uses fictional vehicles, fixed sample
-timestamps and sample readings. There is no Rivian sign-in, account connection or
-vehicle control. You can explore the interface without entering any credentials.
+The current live implementation is a development build. It has not yet been
+checked with an owner's real account; see [implementation status](STATUS.md).
+The API is unofficial and its availability may change.
 
 ## Get started
 
-1. Obtain a development executable for your operating system and architecture.
-   Successful [GitHub Actions jobs](https://github.com/asanderson/my-rivian-data/actions)
-   provide unsigned executable artifacts. Extract the downloaded archive first.
-   If you are building it yourself, follow the [developer setup](DEVELOPER-GUIDE.md#build-from-source).
-2. Open a terminal in the folder containing the executable. On Linux/macOS,
-   run `chmod u+x my-rivian-data` if needed, then `./my-rivian-data`.
+1. Obtain the package matching your desktop operating system and architecture
+   from a successful [GitHub Actions job](https://github.com/asanderson/my-rivian-data/actions).
+   Extract the downloaded artifact and then the `.tar.gz` package within it.
+   `START-HERE.txt` is included in the extracted app folder.
+   Developers can also [build from source](DEVELOPER-GUIDE.md#build-from-source).
+2. Open a terminal in that folder. On Linux/macOS, run
+   `chmod u+x my-rivian-data` if necessary, then `./my-rivian-data`.
    In Windows PowerShell, run `.\my-rivian-data.exe`.
-3. The app opens your default browser. Leave the terminal open while you explore.
-   You do not need Rust, Node.js or a separate web server to run a built executable.
+3. The app opens your default browser. Keep the terminal open while using it.
+   A built app does not require Rust, Node.js or a separate web server.
+4. Sign in on this local page with your Rivian email address and password. If
+   Rivian asks for an additional verification code, enter it in the app.
 
-These are unsigned development builds, not signed consumer installers. Check the
-[implementation status](STATUS.md) for tested platforms and current limitations.
-Desktop executables are specific to their operating system and architecture;
-an executable built for Linux will not run on Windows or macOS. Android and iOS
-applications are planned for a later phase. The mobile-width screenshot below shows
-a responsive browser layout, not a released phone application.
+These are unsigned development packages. Each is specific to its operating
+system and architecture; Linux packages cannot run on Windows or macOS. Signed
+installers and Android/iOS applications are not yet available. A mobile-width
+browser layout is not a released phone application.
 
-![How to obtain and start the offline demo](diagrams/installation-startup.png)
+![Obtain a matching package, start the app locally, and sign in](diagrams/installation-startup.png)
+
+![Local Rivian sign-in page; blank fields contain no account information](screenshots/live-sign-in.png)
+
+## Sign-in and privacy
+
+The local app forwards the entered sign-in details to Rivian over an encrypted
+connection. Your password is used for sign-in and is not saved. Rivian session
+tokens are held in the running native app's memory. The app does not write them
+to a file, browser storage or an OS credential vault. There is no “remember me”
+option; starting a new app session requires sign-in again.
+
+The browser retains a separate, temporary local-app capability in this tab's
+session storage so reloading the page can reconnect to the running app. It is
+not a Rivian token. Ending the local session removes it. Browser session restore
+behavior varies, so choose **End session** when you have finished.
+
+Do not put your password, verification code or private launch link into a chat,
+screenshot or support issue. The developer explorer can display personal vehicle
+information: inspect a response before sharing it.
 
 ## Choose a vehicle
 
-Use **Vehicle** to choose **Demo R1T** or **Demo R1S**. The selected vehicle carries
-across the owner views. Both vehicles are fictional, including their locations.
-Switching vehicles lets you compare how the interface presents different sample
-battery levels, ranges and charging states.
+After sign-in, use **Vehicle** to choose a vehicle returned for your account. The
+selection carries across **Overview**, **Charging**, **Vehicle health** and
+**Location**. The native app checks that a requested vehicle belongs to the
+signed-in account before making a vehicle request.
 
-The navigation groups information by purpose: **Overview**, **Charging**,
-**Vehicle health** and **Location**. Each view labels its values as sample data.
-Reopening a view reads the same fixed examples; it does not contact Rivian
-or make the timestamps current.
+Owner views fetch information when opened or retried. They are snapshots, not a
+continuous tracking service. A successful request does not mean the vehicle
+reported every field at that instant; missing values and reporting times remain
+visible rather than being replaced with plausible numbers.
 
 ## Overview
 
-Start here for a quick look at battery level, estimated driving range, charging
-state and lock status. These are sample readings for the selected vehicle. Follow
-the navigation to explore charging, health or location in more detail.
-
-![Owner overview showing synthetic battery, range and vehicle information](screenshots/desktop.png)
+Start here for battery level, estimated driving range, charging state and lock
+status. The lock reading covers the four passenger doors; it does not certify
+that the frunk, tailgate or every opening is secure. Data depends on what Rivian reports for the selected vehicle. Unavailable
+values do not mean a vehicle fault, zero range or an unlocked vehicle.
 
 ## Charging
 
-See the selected vehicle's sample charging state, battery level, charge limit and
-charging power. A disconnected vehicle has no active charging power in this demo.
-The displayed charge limit is an example setting; the app cannot change it.
+See the reported charging state, battery level, configured charge limit and power
+when available. Charging history lists the sessions returned by the API, with the
+energy and duration fields it supplies. It is not guaranteed to contain every
+home or public charging session. This app does not collect its own history in the
+background or calculate billing totals from missing pricing data.
 
-The charging history lists fictional sessions with a start time, energy added
-(in kWh) and duration. It demonstrates how history will be presented; it is not a
-record of your vehicle's charging. Pricing, payments, a complete charging history
-and ongoing collection are not available.
-
-![Charging status and sample charging history](screenshots/charging.png)
+The charge limit is a readout. This build does not start or stop charging or change
+vehicle settings.
 
 ## Vehicle health
 
-This view currently contains the odometer distance, reported temperature and lock status.
-The sample does not identify which sensor supplied the temperature. It does not
-diagnose your vehicle. **Battery health, tire pressure and service history are
-unavailable**, and the interface identifies those gaps rather than inventing
-readings. Battery charge percentage describes stored energy, not battery health.
-Lock status is a readout; there is no lock or unlock control.
+This view contains available mileage, temperature and lock readings. It does not
+diagnose the vehicle or infer a health score. **Battery health, tire pressure and
+service history are not available in these owner cards.** Battery charge is the
+amount of stored energy, not a measure of battery degradation. An unspecified
+temperature sensor is not labeled as a particular component or cabin temperature.
 
 ## Location
 
-See fictional latitude and longitude, sample accuracy and the fixed sample time.
-There is no map, route history or live tracking. The app does not load a map service
-or send these sample coordinates to one.
+See reported latitude and longitude, with accuracy and a reporting time when
+available. There is no map, route history or background tracking. The app does
+not load a third-party map service or forward the coordinates to one.
 
 ## End a session
 
-Choose **End session** to close access to the current demo session. Press Ctrl+C in
-the terminal to stop the app. Run the executable again to begin a new session.
-Reloading an active session opens **Overview** again; navigation is not saved.
-The app does not store Rivian credentials or vehicle history in the browser.
+Choose **Disconnect account** to discard the current Rivian account connection
+while keeping the local app open for another sign-in.
+
+Choose **End session** to revoke local access and discard the native account
+session. Press Ctrl+C in the terminal to stop the app. Run it again to start a new
+session. Reloading an active tab opens **Overview** again; view selection is not
+saved. Closing the browser alone is not the same as stopping the app.
+
+Logout attempts Rivian's logout request when a remote session is available. Local
+access is removed even if the network is unavailable; the app cannot guarantee
+remote revocation when Rivian cannot be reached.
+
+## Try the demo
+
+Run `./my-rivian-data --demo`, or `.\my-rivian-data.exe --demo` in PowerShell, to
+explore without an account. It uses **Demo R1T** and **Demo R1S**, with fictional
+locations and fixed sample timestamps. It never asks for Rivian credentials or
+contacts Rivian. Reopening a view reads the same fixed examples.
+
+These screenshots show sample mode, not verified live-account readings:
+
+![Sample owner overview](screenshots/desktop.png)
+
+![Sample charging view](screenshots/charging.png)
 
 ## Help
 
 | What you see | What to do |
 | --- | --- |
-| The browser did not open | Keep the terminal open and see the [manual launch option](DEVELOPER-GUIDE.md#launcher-options). Its private, one-use link should not be shared. |
-| The session ended or expired | Stop the executable and run it again to open a new session. |
-| The values do not change after reopening a view | That is expected: the demo uses fixed sample data. |
-| A feature is unavailable | Check [current limitations and planned work](STATUS.md). Login, live data and vehicle commands have not been implemented. |
-
-![Owner overview at a mobile browser width](screenshots/mobile.png)
+| Browser did not open | Keep the app running and see the [manual launch option](DEVELOPER-GUIDE.md#launcher-options). Keep the private one-use link to yourself. |
+| Session ended or expired | Stop the executable and run it again. Sign in on the new local page. |
+| Sign-in or verification fails | Check your account details and code, then follow the error shown. If Rivian requires an unsupported challenge, use the official app to resolve it. Repeated automated attempts will not bypass it. |
+| Requests are limited or temporarily unavailable | Wait before trying again. The app does not continuously retry rejected requests. |
+| A vehicle or value is missing | Check the account and selected vehicle. Available fields vary; missing readings remain unavailable. |
+| Values never change in demo mode | Expected: demo readings and timestamps are fixed examples. |
+| Package will not start | Check the operating system and architecture, extract all files, and see [validation limits](STATUS.md). Do not disable OS security checks blindly. |
 
 ## For developers
 
-Under **Developer tools**, open **API explorer** to inspect local API operations,
-request variables and raw requests/responses. You do not need this view for the
-owner features. It exposes the demo's local interface and keeps live commands
-unavailable. See the [developer guide](DEVELOPER-GUIDE.md) for the explorer, build
-instructions, architecture, data flow and security notes.
+Open **API explorer** under **Developer tools** for admitted operations, editable
+variables and JSON request/response details. Owner features do not require this
+view. The [developer guide](DEVELOPER-GUIDE.md) covers the adapter contract,
+architecture, data flow, build, packaging and security boundaries.

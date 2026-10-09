@@ -20,7 +20,7 @@ const sanitize = value => String(value)
 
 try {
   // This explicit diagnostic flag is scoped to a child process. Its stdout is never logged.
-  host = spawn(binary, ['--no-open', '--print-launch-url'], { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] });
+  host = spawn(binary, ['--demo', '--no-open', '--print-launch-url'], { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] });
   const launchUrl = await new Promise((resolve, reject) => {
     let buffer = '';
     const timeout = setTimeout(() => reject(new Error('Local host did not provide a launch URL within 15 seconds.')), 15_000);
@@ -65,7 +65,7 @@ try {
   assert.match(await ownerData('Demo R1T').innerText(), /72/);
   const wasmLoaded = await page.evaluate(() => performance.getEntriesByType('resource').some(entry => entry.name.includes('.wasm')));
   assert.equal(wasmLoaded, true, 'Owner features must use the real compiled validator.');
-  assert.deepEqual(await page.evaluate(() => ({ local: localStorage.length, session: sessionStorage.length })), { local: 0, session: 0 });
+  assert.deepEqual(await page.evaluate(() => ({ local: localStorage.length, session: sessionStorage.length })), { local: 0, session: 1 });
   await checkWidth('Desktop owner overview');
   await page.screenshot({ path: path.join(screenshots, 'desktop.png'), fullPage: true });
 
@@ -144,10 +144,19 @@ try {
   assert.equal(preview.variables.vehicle_id, 'demo-r1t-001');
   await page.getByRole('button', { name: 'Validate inputs', exact: true }).click();
   await page.getByText('Both validators accept these inputs.', { exact: true }).waitFor();
-  const wireResponse = page.waitForResponse(response => response.url().endsWith('/api/execute') && response.request().postDataJSON().operation_id === 'vehicle-state');
+  // Capture the real native response before Chromium releases its protocol body.
+  // No fixture is substituted: route.fetch sends the browser's actual request to
+  // the local host and fulfill forwards that same status, headers and body.
+  let rawWireBody;
+  await page.route('**/api/execute', async route => {
+    assert.equal(route.request().postDataJSON().operation_id, 'vehicle-state');
+    const response = await route.fetch();
+    rawWireBody = await response.text();
+    await route.fulfill({ response });
+  }, { times: 1 });
   await page.getByRole('button', { name: 'Run demo request', exact: true }).click();
-  const rawWireBody = await (await wireResponse).text();
   await page.getByText(/^HTTP 200 · \d+ ms$/).waitFor();
+  assert.equal(typeof rawWireBody, 'string', 'Capture the native response before comparing the developer view.');
   const rawResponse = page.getByLabel('Demo vehicle state raw response', { exact: true });
   const result = JSON.parse(await rawResponse.innerText());
   assert.equal(result.mode, 'demo');
