@@ -90,11 +90,21 @@ service history are not available in these owner cards.** Battery charge is the
 amount of stored energy, not a measure of battery degradation. An unspecified
 temperature sensor is not labeled as a particular component or cabin temperature.
 
+![Vehicle health tab showing fictional Demo R1T readings](screenshots/vehicle-health.png)
+
+*Actual app screenshot in demo mode. These fictional readings are not verified
+live-account data.*
+
 ## Location
 
 See reported latitude and longitude, with accuracy and a reporting time when
 available. There is no map, route history or background tracking. The app does
 not load a third-party map service or forward the coordinates to one.
+
+![Location tab showing fictional Demo R1T coordinates](screenshots/location.png)
+
+*Actual app screenshot in demo mode. This fictional location is not verified
+live-account data.*
 
 ## End a session
 

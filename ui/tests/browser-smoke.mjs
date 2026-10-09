@@ -129,10 +129,14 @@ try {
   assert.match(await page.locator('.owner-data').innerText(), /does not identify a sensor/);
   await page.getByRole('heading', { name: 'Battery health', exact: true }).waitFor();
   assert.match(await page.locator('.owner-unavailable-grid').innerText(), /battery condition and degradation are not/);
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.screenshot({ path: path.join(screenshots, 'vehicle-health.png'), fullPage: true });
   await ownerArea('Location');
   await page.getByRole('heading', { name: 'Location details', exact: true }).waitFor();
   assert.match(await page.locator('.owner-location-values').innerText(), /47\.0000/);
   await page.getByText('No map or real location is loaded.', { exact: true }).waitFor();
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.screenshot({ path: path.join(screenshots, 'location.png'), fullPage: true });
 
   // Desktop developer workspace exposes local wire bodies and response status.
   await page.getByRole('navigation', { name: 'Developer tools' }).getByRole('button', { name: 'API explorer', exact: true }).click();
@@ -218,7 +222,7 @@ try {
   // An intentionally simulated HTTP 503 is expected; actual script/resource errors are not.
   assert.deepEqual(browserErrors.filter(message => !message.includes('503 (Service Unavailable)')), [], 'Unexpected browser errors.');
   console.log('PASS: owner feature views, vehicle switching/stale replies/retry, developer raw request+response, validation, blocked controls, reload/logout, CSP, desktop/mobile layout.');
-  console.log('Token-free screenshots: artifacts/screenshots/{desktop,mobile,charging,developer,developer-mobile}.png');
+  console.log('Token-free screenshots: artifacts/screenshots/{desktop,mobile,charging,vehicle-health,location,developer,developer-mobile}.png');
 } catch (error) {
   console.error(`Browser smoke failed: ${sanitize(error instanceof Error ? error.message : error)}`);
   process.exitCode = 1;
