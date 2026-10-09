@@ -13,6 +13,7 @@ name = "my-rivian-data"
 path = "src/main.rs"
 
 [dependencies]
+rivian-api = { path = "../rivian-api" }
 rivian-core = { path = "../rivian-core" }
 serde.workspace = true
 serde_json.workspace = true

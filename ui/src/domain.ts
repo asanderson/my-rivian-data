@@ -4,7 +4,10 @@ export interface Operation {
   family: string;
   kind: 'query' | 'mutation' | 'subscription';
   description: string;
-  status: 'demo' | 'planned' | 'blocked';
+  status: 'demo' | 'live' | 'planned' | 'blocked';
+  upstream_operation?: string;
+  upstream_document?: string;
+  endpoint?: string;
   requires_vehicle: boolean;
   example_variables: Record<string, unknown>;
   source_url: string;
@@ -13,16 +16,16 @@ export interface Operation {
 export interface Vehicle {
   id: string;
   name: string;
-  model: string;
-  model_year: number;
-  battery_percent: number;
-  estimated_range_km: number;
-  odometer_km: number;
-  locked: boolean;
-  charging_state: string;
-  temperature_celsius: number;
-  location: { latitude: number; longitude: number; accuracy_m: number };
-  observed_at: string;
+  model: string | null;
+  model_year: number | null;
+  battery_percent: number | null;
+  estimated_range_km: number | null;
+  odometer_km: number | null;
+  locked: boolean | null;
+  charging_state: string | null;
+  temperature_celsius: number | null;
+  location: { latitude: number; longitude: number; accuracy_m: number | null } | null;
+  observed_at: string | null;
   source: string;
 }
 
@@ -31,6 +34,7 @@ export interface ValidationResult { valid: boolean; issues: ValidationIssue[] }
 export interface WasmModule {
   default: () => Promise<unknown>;
   validate_request_json: (operationId: string, variables: string) => string;
+  validate_live_request_json?: (operationId: string, variables: string) => string;
 }
 
 export const MAX_VARIABLE_BYTES = 16 * 1024;

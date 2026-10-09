@@ -1,16 +1,17 @@
 # My Rivian Data diagrams
 
-These standalone PNGs explain the current offline prototype. Green identifies
+These standalone PNGs explain Phase 1 live account reads and explicit demo mode. Green identifies
 native application/build components, blue identifies browser/source components,
 and amber calls out scope or release limitations. Labels carry the meaning as well
-as color. Planned live Rivian access and mobile apps are explicitly marked as future work.
+as color. Mobile apps are explicitly marked as later work. Real-account acceptance and signed
+consumer delivery are not implied by these diagrams.
 
 | Diagram | What it explains | Embedded in |
 | --- | --- | --- |
-| [System context](system-context.png) | Owner views and developer API explorer, computer, native host, and planned integrations | [Architecture](../ARCHITECTURE.md#system-context) |
-| [Data flow](data-flow.png) | Bootstrap, shared WASM/native validation, synthetic responses, and owner/developer presentations | [Architecture](../ARCHITECTURE.md#session-sequence) |
+| [System context](system-context.png) | Owner views and developer API explorer, computer, native host, direct Rivian access and later mobile reuse | [Architecture](../ARCHITECTURE.md#system-context) |
+| [Data flow](data-flow.png) | Bootstrap, account sign-in, native authorization, bounded live reads and owner/developer presentations | [Architecture](../ARCHITECTURE.md#session-sequence) |
 | [Build pipeline](build-pipeline.png) | Locked setup, WASM bindings, UI bundle, embedded native executable, and verification | [Developer guide](../DEVELOPER-GUIDE.md#build-from-source) |
-| [Installation and startup](installation-startup.png) | Source/artifact paths, platform matching, launch, and local owner views | [Owner guide](../OWNER-GUIDE.md#get-started), [README](../../README.md#start-the-demo) |
+| [Installation and startup](installation-startup.png) | Source/package paths, platform matching, local sign-in and owner views | [Owner guide](../OWNER-GUIDE.md#get-started), [README](../../README.md#start-the-app) |
 
 ## Edit and regenerate
 

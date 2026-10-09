@@ -1,4 +1,4 @@
-"""Render build and installation diagrams from the offline prototype workflow."""
+"""Render build and installation diagrams from the standalone application workflow."""
 
 from drawing import AMBER, BLUE, GREEN, Diagram
 
@@ -79,9 +79,10 @@ def build_pipeline():
         "GitHub Actions",
         "Linux / Windows / macOS\n"
         "Each job runs setup + verify.\n"
-        "Linux adds Chromium smoke.\n\n"
+        "Linux adds Chromium smoke.\n"
+        "node scripts/package.mjs\n\n"
         "Successful jobs upload\n"
-        "unsigned executable artifacts.\n"
+        "unsigned app archives + hashes.\n"
         "Retention: 7 days",
         fill=AMBER,
     )
@@ -99,7 +100,7 @@ def installation_startup():
     diagram = Diagram(
         "installation-startup.png",
         "Installation and startup",
-        "Current delivery: unsigned developer executables for the offline prototype.",
+        "Current delivery: unsigned, self-contained development packages for desktop computers.",
         height=1220,
     )
     diagram.box(
@@ -117,8 +118,8 @@ def installation_startup():
         "Option B  Successful CI artifact",
         "Open the intended GitHub Actions run.\n"
         "Check the target job completed successfully.\n"
-        "Download its unsigned executable artifact.\n"
-        "Extract the archive before running it.\n"
+        "Download its unsigned application artifact.\n"
+        "Extract artifact, then its .tar.gz package.\n"
         "Artifacts expire after 7 days.",
         fill=BLUE,
     )
@@ -152,15 +153,15 @@ def installation_startup():
     diagram.arrow([(600, 895), (600, 935)])
     diagram.box(
         175, 935, 850, 105,
-        "Explore the owner views",
-        "Overview · Charging · Vehicle health · Location\n"
-        "Open API explorer separately under Developer tools.",
+        "Sign in locally, then choose your vehicle",
+        "Enter your Rivian account details; complete verification if requested.\n"
+        "Overview · Charging · Vehicle health · Location · Separate API explorer",
         fill=GREEN,
     )
     diagram.text(
         175, 1070,
         "Your vehicles. Your data.\n"
-        "Fixed sample data only. Press Ctrl+C in the terminal to stop the app.",
+        "For fictional data use --demo. Choose End session, then Ctrl+C to stop the app.",
         size=18,
     )
     diagram.footer("Source: README.md, crates/rivian-host/src/main.rs and .github/workflows/verify.yml")

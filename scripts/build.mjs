@@ -14,5 +14,5 @@ main(() => {
   npm(['run', 'build', '--prefix', 'ui']);
   run('cargo', ['build', '-p', 'rivian-host', '--release', '--locked']);
   const executable = path.join(root, 'target/release', process.platform === 'win32' ? 'my-rivian-data.exe' : 'my-rivian-data');
-  console.log(`\nSelf-contained application: ${executable}\nRun it to open the offline demo in your browser.`);
+  console.log(`\nSelf-contained application: ${executable}\nRun it to sign in locally, or add --demo to explore fictional data.`);
 });

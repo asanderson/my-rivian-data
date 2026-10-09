@@ -2,25 +2,26 @@
 
 [Owner guide](OWNER-GUIDE.md) · [Project overview](../README.md) · [Architecture and data flow](ARCHITECTURE.md)
 
-My Rivian Data has two presentations of the same offline data: owner views grouped
-by purpose, and a separate **API explorer** under Developer tools. Both use the same bounded
-validation and native execution path. This is milestone 0, not a live Rivian client.
+My Rivian Data has owner views grouped by purpose and a separate **API explorer**
+under Developer tools. Both use bounded shared validation and native execution.
+The default mode signs in to the unofficial Rivian API and executes admitted
+read operations; `--demo` explicitly selects synthetic data with no network access.
+Real-account compatibility has not yet been verified; see [status](STATUS.md).
 
 ## Local API explorer
 
 Open **API explorer** under **Developer tools** in the application navigation. The Swagger-like explorer
 provides a grouped, searchable catalog, operation descriptions, editable JSON
 variables, a local HTTP method and endpoint, request JSON, validation details,
-and raw response JSON with HTTP status and elapsed time. Select an available demo
-query, review its variables, and choose **Run demo request** to inspect a synthetic
-response. **Validate inputs** checks inputs without executing the query.
+and raw response JSON with HTTP status and elapsed time. Select an available read, review its variables, and run the request to inspect
+the response. The mode label distinguishes live requests from sample data. **Validate inputs** checks inputs without executing the query.
 The **Format JSON** checkbox switches between formatted JSON and the raw response
 body; **Reset example** restores the operation's sample variables. Switching to an owner
 view restores the plain-language presentation of the selected vehicle.
 
 This is an explorer for the application's **local adapter API**. It is not Swagger
-UI, an OpenAPI specification, a complete Rivian operation inventory, or a verified
-Rivian GraphQL schema. Catalog IDs such as `charging-history` name local operations.
+UI, an OpenAPI specification or a complete Rivian GraphQL schema.
+The [coverage inventory](API-COVERAGE.md) records upstream mapping and provenance. Catalog IDs such as `charging-history` name local operations.
 Every execution goes through `POST /api/execute`; the request body contains an
 `operation_id` and `variables`:
 
@@ -33,11 +34,14 @@ Every execution goes through `POST /api/execute`; the request body contains an
 
 The shared validator first checks the variables in WASM, then compares its result
 with `POST /api/validate`. The host revalidates at execution and requires a valid
-local session and CSRF token. The explorer does not display authentication secrets
+local session, per-instance capability and CSRF token. Live vehicle IDs must also
+belong to the signed-in account; a syntactically valid identifier is insufficient. The explorer does not display authentication secrets
 or turn an arbitrary endpoint into a proxy. Planned subscriptions and blocked
 commands remain unavailable in either presentation.
 
-![Developer explorer with local request and synthetic response](screenshots/developer.png)
+The screenshot below is a sample-mode example, not evidence of a live account test.
+
+![Developer explorer with a sample request and response](screenshots/developer.png)
 
 See the [local HTTP contract](ARCHITECTURE.md#local-http-contract),
 [view-to-operation mapping](ARCHITECTURE.md#presentation-and-data-mapping), and
@@ -66,7 +70,7 @@ The build compiles Rust to WASM, generates its web bindings, bundles the React i
 
 ![My Rivian Data build pipeline: locked dependencies, Rust/WASM, React bundle, native embedding and verification](diagrams/build-pipeline.png)
 
-The scripts invoke npm's JavaScript entry point through Node without a shell. If an unusual Node installation prevents discovery, set `RIVIAN_NPM_CLI` to the absolute path of its `npm-cli.js`. Cargo's default `target` directory is assumed by the build scripts; do not override `CARGO_TARGET_DIR` for this prototype.
+The scripts invoke npm's JavaScript entry point through Node without a shell. If an unusual Node installation prevents discovery, set `RIVIAN_NPM_CLI` to the absolute path of its `npm-cli.js`. Cargo's default `target` directory is assumed by the build scripts; do not override `CARGO_TARGET_DIR`.
 
 ## Verify
 
@@ -85,37 +89,81 @@ npm run test:browser --prefix ui
 
 On Linux, Playwright may also require distribution packages; `node ui/node_modules/playwright/cli.js install --with-deps chromium` installs those when run with suitable system privileges. The test can use an existing compatible Chromium by setting `PLAYWRIGHT_CHROMIUM_EXECUTABLE` to its executable path. Browser downloads are development/test dependencies, separate from the self-contained application.
 
-The GitHub Actions workflow is configured to run the core checks on Linux, Windows and macOS, run the Chromium smoke test on Linux, and retain unsigned executable artifacts. Configuration is not evidence that those CI jobs have run. Actual results, browser checks, limitations and remaining work belong in [Implementation status](STATUS.md).
+The GitHub Actions workflow is configured to run the core checks on Linux, Windows and macOS, run the Chromium smoke test on Linux, and package unsigned application archives with checksums, documentation, licenses
+and corresponding source. Configuration is not evidence that those CI jobs have run. Actual results, browser checks, limitations and remaining work belong in [Implementation status](STATUS.md).
 
 ## Project layout
 
 | Path | Responsibility |
 | --- | --- |
-| `crates/rivian-core` | Portable catalog, bounded input validation and synthetic data |
+| `crates/rivian-core` | Portable catalog, bounded validation, normalization and synthetic fixtures |
 | `crates/rivian-wasm` | Non-secret WASM exports of the shared core |
-| `crates/rivian-host` | Axum loopback service, local session boundary and embedded assets |
+| `crates/rivian-host` | Axum loopback service, local/account authority and embedded assets |
+| `crates/rivian-api` | Fixed Rivian HTTPS operations, authentication and session-only tokens |
 | `ui` | React/TypeScript interface and native-host HTTP adapter |
 | `fixtures` | Synthetic fixtures consumed by native/WASM verification |
 | `scripts` | Portable dependency setup, build and verification |
 | `docs` | Implementation status and review evidence |
 
-## Security and next milestones
+## Package a build
 
-The local host checks Host/Origin, uses a single-use bootstrap capability and session/CSRF protections, and exposes a bounded operation catalog. WASM linear memory is capped at 64 MiB; this does not cap the browser's total memory. The module does not export credential storage, networking, signing or command execution. These controls reduce specific attack paths; an offline prototype is not evidence of production security. See the [security review](SECURITY-REVIEW.md) and [implementation status](STATUS.md) for the tested boundary and outstanding findings.
+After verifying and committing a **clean source tree**, run:
 
-Next milestones are a native credential-vault interface and authentication state machine, owner-authorized live read-only API validation, catalog expansion, reviewed command authority, packaging and independent adversarial review. Actual credential entry and live vehicle operations require those implementations and their gates; the demo UI must never solicit account passwords.
+```text
+node scripts/package.mjs
+```
 
-This original project code uses the repository's [GNU GPLv3 license](../LICENSE) (`GPL-3.0-only`). Third-party dependencies retain their own licenses and [notices](THIRD-PARTY-NOTICES.md). No assertion of a completed independent Anthropic review, live Rivian compatibility, signed release or store acceptance is made by this prototype.
+The script rebuilds from that clean revision, then uses Git and the system `tar` (included on current Windows/macOS/Linux
+CI images) to create `dist/my-rivian-data-VERSION-PLATFORM-ARCH.tar.gz` and its
+`.sha256` checksum. It stages the executable, `START-HERE.txt`, documentation,
+license notices, `BUILD.json` and a corresponding-source archive. A dirty source
+tree is rejected so the source archive cannot silently describe a different
+revision. It runs the build itself so a stale pre-existing executable cannot
+silently be paired with newer source.
+
+GitHub Actions uploads these files in a standard downloadable artifact. Extract
+that artifact and then the application archive inside it. Platform labels derive
+from the actual builder (`linux`, `darwin` or `win32` and its architecture), not
+from a claim that one binary works on every machine. Packages are unsigned and
+not notarized. Checksums provide integrity checks, not publisher authentication.
+Current CI artifact retention is seven days; this is not a permanent release
+channel or an automatic updater.
+
+## Security and further release work
+
+The native host checks Host/Origin, bootstrap, a local cookie, a per-instance
+application capability and CSRF. The capability is stored in origin-scoped tab
+session storage and required even for `/api/session`; a cookie replayed across
+loopback ports cannot recover local authority on its own. Rivian session tokens
+remain native and memory-only. Neither the WASM interface nor the developer
+explorer exposes tokens, keys or arbitrary network access.
+
+WASM linear memory is capped at 64 MiB. The browser advisory validator never
+establishes vehicle ownership. Native account authorization and exact operation
+admission are rechecked at execution. The app does not persist account data or
+implement remembered sessions. A future OS-vault implementation must be reviewed
+before adding that feature.
+
+See the [security review](SECURITY-REVIEW.md), [API inventory](API-COVERAGE.md) and
+[implementation status](STATUS.md). Live acceptance with owner credentials, signed
+consumer packaging, independent-provider review and mobile delivery remain
+separate gates. Tests using a deterministic server prove client behavior against
+that contract, not that Rivian currently accepts a particular account.
+
+The project uses [GNU GPLv3](../LICENSE) (`GPL-3.0-only`); third-party dependencies
+retain their own [licenses and notices](THIRD-PARTY-NOTICES.md).
 
 ## Launcher options
 
 ```text
 my-rivian-data --help
+my-rivian-data --demo
 my-rivian-data --port 43127
 my-rivian-data --no-open --print-launch-url
 ```
 
-`--port 0` chooses a free port (the default). `--no-open` suppresses browser launch.
+`--demo` chooses fictional data and disables Rivian sign-in/network access.
+Without it, the app opens live sign-in. `--port 0` chooses a free port (the default). `--no-open` suppresses browser launch.
 `--print-launch-url` explicitly prints a sensitive, single-use bootstrap link that
 expires after five minutes; open it locally and keep it out of screenshots, tickets
 and shared logs. Restart the application to obtain a new link. The normal status
@@ -124,6 +172,7 @@ URL alone does not authorize a browser session.
 ## Technical documentation
 
 - [Architecture, design boundaries, local API and data flow](ARCHITECTURE.md)
+- [API coverage and provenance](API-COVERAGE.md)
 - [Security review and findings](SECURITY-REVIEW.md)
 - [Implementation status and validation evidence](STATUS.md)
 - [Standalone PNG diagrams and editable sources](diagrams/README.md)

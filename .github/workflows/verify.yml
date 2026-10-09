@@ -1,4 +1,4 @@
-name: Verify offline prototype
+name: Verify My Rivian Data
 
 on:
   push:
@@ -35,12 +35,14 @@ jobs:
       - name: Browser smoke test
         if: runner.os == 'Linux'
         run: npm run test:browser --prefix ui
-      - name: Upload unsigned prototype executable
+      - name: Package executable, documentation, notices and corresponding source
+        run: node scripts/package.mjs
+      - name: Upload unsigned application package
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: my-rivian-data-${{ matrix.os }}-unsigned
+          name: my-rivian-data-${{ runner.os }}-${{ runner.arch }}-unsigned
           path: |
-            target/release/my-rivian-data
-            target/release/my-rivian-data.exe
+            dist/*.tar.gz
+            dist/*.sha256
           if-no-files-found: error
           retention-days: 7
