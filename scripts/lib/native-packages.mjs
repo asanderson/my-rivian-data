@@ -49,7 +49,7 @@ export function nativePackages({ staging, output, name, version, revision, signe
     const spec = path.join(top, 'SPECS/my-rivian-data.spec');
     // rpm owns every installed path. No install/uninstall scriptlets execute code.
     const quotedSource = `'${path.join(packageRoot, 'usr').replaceAll("'", "'\\''").replaceAll('%', '%%')}'`;
-    writeFileSync(spec, `Name: my-rivian-data\nVersion: ${version}\nRelease: 1.git${revision.slice(0, 12)}\nSummary: Local Rivian owner data application\nLicense: GPL-3.0-only\nBuildArch: x86_64\nRequires: glibc >= 2.35\nRequires: xdg-utils\n%description\nUnofficial Rivian owner data application.\n%install\nmkdir -p "%{buildroot}"\ncp -a ${quotedSource} "%{buildroot}/"\n%files\n/usr/bin/my-rivian-data\n/usr/share/my-rivian-data\n/usr/share/applications/my-rivian-data.desktop\n`);
+    writeFileSync(spec, `%global __requires_exclude_from ^/usr/share/my-rivian-data/docs/\n%global __provides_exclude_from ^/usr/share/my-rivian-data/docs/\nName: my-rivian-data\nVersion: ${version}\nRelease: 1.git${revision.slice(0, 12)}\nSummary: Local Rivian owner data application\nLicense: GPL-3.0-only\nBuildArch: x86_64\nRequires: glibc >= 2.35\nRequires: xdg-utils\n%description\nUnofficial Rivian owner data application.\n%install\nmkdir -p "%{buildroot}"\ncp -a ${quotedSource} "%{buildroot}/"\n%files\n/usr/bin/my-rivian-data\n/usr/share/my-rivian-data\n/usr/share/applications/my-rivian-data.desktop\n`);
     run('rpmbuild', ['-bb', '--define', `_topdir ${top}`, '--define', '_build_id_links none', '--define', '__os_install_post %{nil}', spec]);
     const rpm = readdirSync(path.join(top, 'RPMS/x86_64')).find(file => file.endsWith('.rpm'));
     if (!rpm) throw new Error('RPM build produced no artifact.');

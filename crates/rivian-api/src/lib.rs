@@ -62,6 +62,13 @@ pub struct AuthStatus {
     pub channel: Option<&'static str>,
 }
 
+/// Native-only result bound to the exact account generation invalidated by logout.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LogoutOutcome {
+    pub remote_revoked: bool,
+    pub epoch: u64,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 #[error("{message}")]
 pub struct ApiError {
@@ -102,6 +109,17 @@ impl ApiError {
             "rate_limited",
             "Requests are paused. Wait a few minutes before trying again.",
         )
+    }
+
+    fn after_dispatch(self, dispatched: bool) -> Self {
+        if dispatched && self.code == "session_revoked" {
+            Self::new(
+                "command_outcome_unknown",
+                "The account session changed after this command may have been sent. Check the vehicle or account before trying again.",
+            )
+        } else {
+            self
+        }
     }
 }
 
@@ -911,6 +929,26 @@ impl LiveClient {
         self.finish_logout(epoch).await
     }
 
+    /// Disconnect only the admitted account generation. A newer sign-in makes
+    /// this continuation stale, including while upstream or vault I/O is pending.
+    pub async fn logout_at_epoch(&self, expected_epoch: u64) -> Result<LogoutOutcome, ApiError> {
+        self.ensure_active(expected_epoch)?;
+        let epoch = self
+            .advance_epoch_if_current(expected_epoch)
+            .ok_or_else(|| {
+                ApiError::new(
+                    "session_revoked",
+                    "This local session has ended. Reopen My Rivian Data.",
+                )
+            })?;
+        let remote_revoked = self.finish_logout(epoch).await;
+        self.ensure_active(epoch)?;
+        Ok(LogoutOutcome {
+            remote_revoked,
+            epoch,
+        })
+    }
+
     async fn finish_logout(&self, epoch: u64) -> bool {
         let mut state = self.state.lock().await;
         if self.authorization_epoch() != epoch && !self.revoked.load(Ordering::SeqCst) {
@@ -1040,13 +1078,16 @@ impl LiveClient {
             }
             return Err(error);
         }
+        let dispatched = AtomicBool::new(false);
+        let command_dispatch = live::requires_confirmation(operation_id).then_some(&dispatched);
         let mut result = self
-            .post(
+            .post_with_dispatch(
                 request.endpoint.url(),
                 &request.operation_name,
                 &request.query,
                 request.variables.clone(),
                 &state,
+                command_dispatch,
             )
             .await;
         // Read-only operations may rotate the app session once;
@@ -1072,7 +1113,8 @@ impl LiveClient {
         }
         match result {
             Ok(mut response) => {
-                self.ensure_active(epoch)?;
+                self.ensure_active(epoch)
+                    .map_err(|error| error.after_dispatch(dispatched.load(Ordering::SeqCst)))?;
                 redact_secrets(&mut response);
                 if (operation_id == "list-vehicles" || operation_id == "account-summary")
                     && let Err(error) = Self::remember_account(&mut state, &response)
@@ -1095,10 +1137,11 @@ impl LiveClient {
                     state.remember = false;
                     if error.code == "session_revoked" {
                         state.clear_auth();
-                        return Err(error);
+                        return Err(error.after_dispatch(dispatched.load(Ordering::SeqCst)));
                     }
                 }
-                self.ensure_active(epoch)?;
+                self.ensure_active(epoch)
+                    .map_err(|error| error.after_dispatch(dispatched.load(Ordering::SeqCst)))?;
                 Ok(
                     json!({"operation_id":operation_id,"source":"rivian","synthetic":false,"observed_at":observed_at,"received_at":received_at,"data":normalized,"raw_response":response}),
                 )
@@ -1253,16 +1296,31 @@ impl LiveClient {
         variables: Value,
         state: &State,
     ) -> Result<Value, ApiError> {
+        self.post_with_dispatch(endpoint, operation, query, variables, state, None)
+            .await
+    }
+
+    async fn post_with_dispatch(
+        &self,
+        endpoint: &str,
+        operation: &str,
+        query: &str,
+        variables: Value,
+        state: &State,
+        dispatched: Option<&AtomicBool>,
+    ) -> Result<Value, ApiError> {
         let mut changed = self.epoch.subscribe();
         self.ensure_active(state.epoch)?;
-        tokio::select! {
+        let result = tokio::select! {
             biased;
             _ = changed.changed() => Err(ApiError::new("session_revoked", "This local session has ended. Reopen My Rivian Data.")),
-            result = self.post_inner(endpoint, operation, query, variables, state) => {
-                self.ensure_active(state.epoch)?;
-                result
+            result = self.post_inner(endpoint, operation, query, variables, state, dispatched) => {
+                self.ensure_active(state.epoch).and(result)
             }
-        }
+        };
+        result.map_err(|error| {
+            error.after_dispatch(dispatched.is_some_and(|flag| flag.load(Ordering::SeqCst)))
+        })
     }
 
     async fn post_inner(
@@ -1272,6 +1330,7 @@ impl LiveClient {
         query: &str,
         variables: Value,
         state: &State,
+        dispatched: Option<&AtomicBool>,
     ) -> Result<Value, ApiError> {
         // Defense in depth: never turn this helper into an arbitrary URL proxy.
         if !matches!(
@@ -1309,6 +1368,12 @@ impl LiveClient {
         let body =
             SecretJson(json!({"operationName":operation,"query":query,"variables":variables}));
         let encoded = Zeroizing::new(serde_json::to_vec(&body.0).map_err(|_| ApiError::schema())?);
+        self.ensure_active(state.epoch)?;
+        // Beyond this point the HTTP future may send the command. Canceling it
+        // cannot establish whether Rivian received or applied the change.
+        if let Some(dispatched) = dispatched {
+            dispatched.store(true, Ordering::SeqCst);
+        }
         let mut response = self
             .http
             .post(endpoint)
@@ -1989,6 +2054,121 @@ mod tests {
         assert!(fake.store.read_for_test().is_none());
     }
 
+    async fn release_timed_out_write(fake: &mut Fake, gate: &vault::tests::WriteGate) {
+        gate.release();
+        Arc::get_mut(&mut fake.client)
+            .unwrap()
+            .vault
+            .set_io_timeout(Duration::from_secs(2));
+        // A read takes the same native-store gate, after detached-write cleanup.
+        fake.client
+            .vault
+            .read(fake.client.epoch.clone(), fake.client.authorization_epoch())
+            .await
+            .unwrap();
+        assert!(fake.store.read_for_test().is_none());
+    }
+
+    #[tokio::test]
+    async fn vault_write_timeout_keeps_opted_in_login_authenticated_in_memory() {
+        let mut fake = new_fake(vec![
+            csrf().into(),
+            authenticated().into(),
+            account().into(),
+        ])
+        .await;
+        Arc::get_mut(&mut fake.client)
+            .unwrap()
+            .vault
+            .set_io_timeout(Duration::from_millis(30));
+        let gate = Arc::new(vault::tests::WriteGate::default());
+        *fake.store.write_gate.lock().unwrap() = Some(gate.clone());
+        let expected = fake.client.authorization_epoch();
+        let result = fake
+            .client
+            .login_with_remember("owner@example.com", "password", true, expected)
+            .await;
+        let epoch = fake.client.authorization_epoch();
+        let status = fake.client.status().await;
+        let vault = fake.client.vault_status().await;
+        release_timed_out_write(&mut fake, &gate).await;
+        assert_eq!(result.unwrap().state, AuthState::Authenticated);
+        assert_eq!(epoch, expected.wrapping_add(1));
+        assert_eq!(status.state, AuthState::Authenticated);
+        assert!(!vault.remembering);
+        assert_eq!(vault.error, Some("vault_unavailable"));
+        assert!(fake.client.check_vehicle_access("vehicle-1").await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn vault_write_timeout_keeps_successful_otp_authenticated_in_memory() {
+        let mut fake = new_fake(vec![
+            csrf().into(),
+            mfa().into(),
+            json!({"data":{"loginWithOTPV2":{"userSessionToken":"user-secret"}}}).into(),
+            account().into(),
+        ])
+        .await;
+        Arc::get_mut(&mut fake.client)
+            .unwrap()
+            .vault
+            .set_io_timeout(Duration::from_millis(30));
+        fake.client.remember(true).await.unwrap();
+        assert_eq!(
+            fake.client
+                .login("owner@example.com", "password")
+                .await
+                .unwrap()
+                .state,
+            AuthState::MfaRequired
+        );
+        clear_cooldown(&fake.client).await;
+        let epoch = fake.client.authorization_epoch();
+        let gate = Arc::new(vault::tests::WriteGate::default());
+        *fake.store.write_gate.lock().unwrap() = Some(gate.clone());
+        let result = fake.client.verify_otp_at_epoch("123456", epoch).await;
+        let actual_epoch = fake.client.authorization_epoch();
+        let status = fake.client.status().await;
+        let vault = fake.client.vault_status().await;
+        release_timed_out_write(&mut fake, &gate).await;
+        assert_eq!(result.unwrap().state, AuthState::Authenticated);
+        assert_eq!(actual_epoch, epoch);
+        assert_eq!(status.state, AuthState::Authenticated);
+        assert!(!vault.remembering);
+        assert_eq!(vault.error, Some("vault_unavailable"));
+    }
+
+    #[tokio::test]
+    async fn vault_write_timeout_keeps_existing_memory_authentication_current() {
+        let mut fake = new_fake(vec![
+            csrf().into(),
+            authenticated().into(),
+            account().into(),
+        ])
+        .await;
+        fake.client
+            .login("owner@example.com", "password")
+            .await
+            .unwrap();
+        Arc::get_mut(&mut fake.client)
+            .unwrap()
+            .vault
+            .set_io_timeout(Duration::from_millis(30));
+        let epoch = fake.client.authorization_epoch();
+        let gate = Arc::new(vault::tests::WriteGate::default());
+        *fake.store.write_gate.lock().unwrap() = Some(gate.clone());
+        let result = fake.client.remember_at_epoch(true, epoch).await;
+        let actual_epoch = fake.client.authorization_epoch();
+        let status = fake.client.status().await;
+        let vault = fake.client.vault_status().await;
+        release_timed_out_write(&mut fake, &gate).await;
+        assert_eq!(result.unwrap_err().code(), "vault_unavailable");
+        assert_eq!(actual_epoch, epoch);
+        assert_eq!(status.state, AuthState::Authenticated);
+        assert!(!vault.remembering);
+        assert_eq!(vault.error, Some("vault_unavailable"));
+    }
+
     #[tokio::test]
     async fn malformed_or_expired_remembered_bundle_never_dispatches() {
         for bundle in [
@@ -2246,6 +2426,89 @@ mod tests {
         assert_eq!(fake.client.status().await.state, AuthState::Authenticated);
         let stored: Value = serde_json::from_slice(&fake.store.read_for_test().unwrap()).unwrap();
         assert_eq!(stored["user_id"], "account-2");
+        assert_eq!(fake.state.requests.lock().unwrap().len(), 6);
+    }
+
+    #[tokio::test]
+    async fn epoch_bound_logout_returns_its_own_invalidation_epoch() {
+        let fake = new_fake(vec![
+            csrf().into(),
+            authenticated().into(),
+            account().into(),
+            json!({"data":{"logout":{"success":true}}}).into(),
+        ])
+        .await;
+        fake.client.remember(true).await.unwrap();
+        fake.client
+            .login("owner@example.com", "password")
+            .await
+            .unwrap();
+        let expected = fake.client.authorization_epoch();
+        let outcome = fake.client.logout_at_epoch(expected).await.unwrap();
+        assert!(outcome.remote_revoked);
+        assert_eq!(outcome.epoch, expected.wrapping_add(1));
+        assert_eq!(outcome.epoch, fake.client.authorization_epoch());
+        assert_eq!(fake.client.status().await.state, AuthState::SignedOut);
+        assert!(fake.store.read_for_test().is_none());
+        assert_eq!(fake.state.requests.lock().unwrap().len(), 4);
+    }
+
+    #[tokio::test]
+    async fn epoch_bound_logout_never_recaptures_a_newer_account_epoch() {
+        let fake = new_fake(vec![
+            csrf().into(),
+            authenticated().into(),
+            account().into(),
+            csrf().into(),
+            authenticated().into(),
+            account().into(),
+        ])
+        .await;
+        fake.client.remember(true).await.unwrap();
+        fake.client
+            .login("owner@example.com", "password")
+            .await
+            .unwrap();
+        let expected = fake.client.authorization_epoch();
+        clear_cooldown(&fake.client).await;
+        let guard = fake.client.state.lock().await;
+        let client = fake.client.clone();
+        let logout = tokio::spawn(async move { client.logout_at_epoch(expected).await });
+        tokio::time::timeout(Duration::from_secs(1), async {
+            while fake.client.authorization_epoch() == expected {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        let invalidation = fake.client.authorization_epoch();
+        let client = fake.client.clone();
+        let login = tokio::spawn(async move { client.login("new@example.com", "password").await });
+        tokio::time::timeout(Duration::from_secs(1), async {
+            while fake.client.authorization_epoch() == invalidation {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        drop(guard);
+        assert_eq!(logout.await.unwrap().unwrap_err().code(), "session_revoked");
+        assert_eq!(
+            login.await.unwrap().unwrap().state,
+            AuthState::Authenticated
+        );
+        let newer_epoch = fake.client.authorization_epoch();
+        assert_eq!(
+            fake.client
+                .logout_at_epoch(expected)
+                .await
+                .unwrap_err()
+                .code(),
+            "session_revoked"
+        );
+        assert_eq!(fake.client.authorization_epoch(), newer_epoch);
+        assert_eq!(fake.client.status().await.state, AuthState::Authenticated);
+        assert!(fake.store.read_for_test().is_some());
         assert_eq!(fake.state.requests.lock().unwrap().len(), 6);
     }
 
@@ -2539,6 +2802,84 @@ mod tests {
         );
         assert_eq!(fake.state.requests.lock().unwrap().len(), 4);
         assert_eq!(fake.client.status().await.state, AuthState::SignedOut);
+    }
+
+    #[tokio::test]
+    async fn confirmed_write_canceled_after_dispatch_reports_unknown_outcome_once() {
+        for permanent_revoke in [false, true] {
+            let gate = Arc::new(Notify::new());
+            let fake = new_fake(vec![
+                csrf().into(),
+                authenticated().into(),
+                account().into(),
+                Reply {
+                    status: StatusCode::OK,
+                    body: json!({"data":{"setVehicleName":true}}),
+                    gate: Some(gate.clone()),
+                },
+            ])
+            .await;
+            fake.client
+                .login("owner@example.com", "password")
+                .await
+                .unwrap();
+            let epoch = fake.client.authorization_epoch();
+            let client = fake.client.clone();
+            let write = tokio::spawn(async move {
+                client
+                    .execute_confirmed(
+                        "rename-vehicle",
+                        &json!({"vehicle_id":"vehicle-1","name":"New name"}),
+                        epoch,
+                    )
+                    .await
+            });
+            wait_requests(&fake, 4).await;
+            if permanent_revoke {
+                fake.client.revoke();
+            } else {
+                fake.client.advance_epoch();
+            }
+            let error = tokio::time::timeout(Duration::from_secs(1), write)
+                .await
+                .unwrap()
+                .unwrap()
+                .unwrap_err();
+            gate.notify_waiters();
+            assert_eq!(error.code(), "command_outcome_unknown");
+            assert!(error.message().contains("Check"));
+            assert_eq!(fake.state.requests.lock().unwrap().len(), 4);
+        }
+    }
+
+    #[tokio::test]
+    async fn confirmed_write_revoked_while_queued_never_dispatches() {
+        let fake = new_fake(vec![
+            csrf().into(),
+            authenticated().into(),
+            account().into(),
+        ])
+        .await;
+        fake.client
+            .login("owner@example.com", "password")
+            .await
+            .unwrap();
+        let epoch = fake.client.authorization_epoch();
+        let guard = fake.client.state.lock().await;
+        let client = fake.client.clone();
+        let write = tokio::spawn(async move {
+            client
+                .execute_confirmed(
+                    "rename-vehicle",
+                    &json!({"vehicle_id":"vehicle-1","name":"New name"}),
+                    epoch,
+                )
+                .await
+        });
+        fake.client.advance_epoch();
+        drop(guard);
+        assert_eq!(write.await.unwrap().unwrap_err().code(), "session_revoked");
+        assert_eq!(fake.state.requests.lock().unwrap().len(), 3);
     }
 
     #[tokio::test]

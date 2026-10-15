@@ -61,8 +61,8 @@ owner's vehicle or establish real Rivian acceptance. Current verification result
 are recorded after the final implementation run; no cross-platform result is
 inferred from this host.
 
-The final patched Linux run of `node scripts/verify.mjs` passed: 127 Rust tests
-(60 native API, 37 core, 2 host confirmation, 21 HTTP security, 7 WASM),
+The final patched Linux run of `node scripts/verify.mjs` passed: 139 Rust tests
+(71 native API, 37 core, 3 host confirmation, 21 HTTP security, 7 WASM),
 44 UI tests, 14 delivery/measurement/release tests, strict clippy, formatting,
 TypeScript and the embedded release build. Compiled native/WASM parity covered
 22 demo, 46 live-validation and 25 telemetry/error fixtures, both inventories

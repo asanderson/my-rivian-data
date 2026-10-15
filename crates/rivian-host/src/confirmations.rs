@@ -38,8 +38,8 @@ impl Confirmations {
         let ticket = self.0.remove(index);
         (ticket.epoch == epoch && ticket.expires > now).then_some(ticket)
     }
-    pub fn clear(&mut self) {
-        self.0.clear();
+    pub fn forget_epoch(&mut self, epoch: u64) {
+        self.0.retain(|ticket| ticket.epoch != epoch);
     }
 }
 #[cfg(test)]
@@ -61,6 +61,16 @@ mod tests {
         let ticket = book.consume("nonce", 3, now).unwrap();
         assert_eq!(ticket.variables, variables);
         assert!(book.consume("nonce", 3, now).is_none());
+    }
+    #[test]
+    fn delayed_disconnect_preserves_a_newer_accounts_confirmations() {
+        let now = Instant::now();
+        let mut book = Confirmations::default();
+        assert!(book.issue("older".into(), "rename-vehicle".into(), json!({}), 42, now));
+        assert!(book.issue("newer".into(), "rename-vehicle".into(), json!({}), 43, now));
+        book.forget_epoch(42);
+        assert!(book.consume("older", 42, now).is_none());
+        assert!(book.consume("newer", 43, now).is_some());
     }
     #[test]
     fn expiry_wrong_account_and_capacity_fail_closed() {

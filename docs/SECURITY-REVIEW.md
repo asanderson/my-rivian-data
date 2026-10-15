@@ -103,7 +103,7 @@ post-lock checks prevent old continuations clearing or adopting a new account.
 Authentication-failure telemetry metadata remains native and is omitted from
 browser JSON. Delayed start/stop cannot cancel a newer account worker.
 
-The final Linux verification passed 127 Rust, 44 UI and 14 delivery tests plus
+The final Linux verification passed 139 Rust, 44 UI and 14 delivery tests plus
 compiled parity and both Chromium suites. These tests use synthetic contracts,
 isolated memory stores and no real Rivian account. The advisory scan initially
 found RUSTSEC-2026-0346/0347/0348/0349 in Rustls 0.23.45; the lock was updated to

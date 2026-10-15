@@ -66,6 +66,10 @@ main(async () => {
     } else if (process.platform === 'linux') {
       const deb = path.join(output, `${name}.deb`), rpm = path.join(output, `${name}.rpm`);
       if (!existsSync(deb) || !existsSync(rpm)) throw new Error('Missing DEB/RPM.');
+      const rpmRequires = run('rpm', ['--query', '--package', '--requires', rpm], { capture: true });
+      const rpmProvides = run('rpm', ['--query', '--package', '--provides', rpm], { capture: true });
+      assert.ok(!/^perl(?:\(|\s|$)/mu.test(rpmRequires + '\n' + rpmProvides), 'Retained documentation must not introduce a Perl runtime dependency');
+      assert.ok(rpmRequires.includes('libc.so.6'), 'GNU/Linux native runtime dependencies must remain detected');
       run('desktop-file-validate', [path.join(root, 'packaging/linux/my-rivian-data.desktop')]);
       run('dpkg-deb', ['--info', deb]);
       // Isolated extraction and RPM database avoid installing on the owner's OS.
@@ -76,7 +80,10 @@ main(async () => {
       const rpmRoot = path.join(temporary, 'rpm');
       run('rpm', ['--root', rpmRoot, '--initdb']);
       run('rpm', ['--root', rpmRoot, '--install', '--nodeps', '--noscripts', rpm]);
-      run('rpm', ['--root', rpmRoot, '--verify', 'my-rivian-data']);
+      // This isolated database deliberately contains only our package, not a
+      // distribution's dependency packages. Verify payload integrity here;
+      // runtime compatibility and dependency resolution need a real RPM host.
+      run('rpm', ['--root', rpmRoot, '--verify', '--nodeps', 'my-rivian-data']);
       verifyPayload(path.join(rpmRoot, 'usr/share/my-rivian-data'));
       run('rpm', ['--root', rpmRoot, '--erase', '--nodeps', '--noscripts', 'my-rivian-data']);
       assert.equal(existsSync(path.join(rpmRoot, 'usr/bin/my-rivian-data')), false);

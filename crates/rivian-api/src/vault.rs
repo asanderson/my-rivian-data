@@ -5,7 +5,7 @@
 use std::fs::{File, OpenOptions};
 use std::path::{Path, PathBuf};
 use std::sync::Weak;
-use std::sync::{Arc, Mutex as StdMutex, OnceLock};
+use std::sync::{Arc, Condvar, Mutex as StdMutex, OnceLock};
 use std::time::Duration;
 
 use serde::Serialize;
@@ -199,6 +199,57 @@ struct Health {
     error: Option<&'static str>,
 }
 
+// A successful native write keeps the store gate until its async caller
+// accepts the result. Dropping that caller cancels the write even if the OS I/O
+// has already finished and the result has not yet been polled.
+#[derive(Default)]
+struct WriteAcknowledgement {
+    accepted: StdMutex<Option<bool>>,
+    ready: Condvar,
+}
+impl WriteAcknowledgement {
+    fn decide(&self, accepted: bool) {
+        let mut decision = self
+            .accepted
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        decision.get_or_insert(accepted);
+        self.ready.notify_one();
+    }
+
+    fn cancelled(&self) -> bool {
+        *self
+            .accepted
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            == Some(false)
+    }
+
+    fn wait_for_acceptance(&self) -> bool {
+        let decision = self
+            .accepted
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        *self
+            .ready
+            .wait_while(decision, |decision| decision.is_none())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            == Some(true)
+    }
+}
+
+struct PendingWrite(Arc<WriteAcknowledgement>);
+impl PendingWrite {
+    fn accept(self) {
+        self.0.decide(true);
+    }
+}
+impl Drop for PendingWrite {
+    fn drop(&mut self) {
+        self.0.decide(false);
+    }
+}
+
 pub(crate) struct Vault {
     store: Arc<dyn SecretStore>,
     gate: Arc<StdMutex<()>>,
@@ -228,6 +279,11 @@ impl Vault {
             health: Arc::new(StdMutex::new(Health::default())),
             io_timeout: IO_TIMEOUT,
         }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_io_timeout(&mut self, timeout: Duration) {
+        self.io_timeout = timeout;
     }
 
     pub(crate) fn status(&self, remembering: bool) -> VaultStatus {
@@ -303,56 +359,65 @@ impl Vault {
         let store = self.store.clone();
         let gate = self.gate.clone();
         let health = self.health.clone();
-        let timeout_generation = generation.clone();
-        let operation = tokio::task::spawn_blocking(move || {
-            let _guard = gate.lock().map_err(|_| unavailable())?;
-            current(&generation, epoch)?;
-            let result = store.write(&secret);
-            if result.is_ok()
-                && let Err(error) = current(&generation, epoch)
-            {
-                // Native deletion may block too; never hold the status mutex
-                // across OS I/O, so the asynchronous timeout remains bounded.
-                let deleted = store.delete().is_ok();
-                let mut health = health.lock().map_err(|_| unavailable())?;
-                health.available = deleted;
-                health.stored = !deleted;
-                health.error = if deleted {
-                    None
-                } else {
-                    Some("vault_delete_failed")
-                };
-                return Err(error);
-            }
-            let mut health = health.lock().map_err(|_| unavailable())?;
-            match result {
-                Ok(()) => {
+        let worker_generation = generation.clone();
+        let pending = PendingWrite(Arc::new(WriteAcknowledgement::default()));
+        let acknowledgement = pending.0.clone();
+        let (completed, completion) = tokio::sync::oneshot::channel();
+        tokio::task::spawn_blocking(move || {
+            let mut completed = Some(completed);
+            let result = (|| {
+                let _guard = gate.lock().map_err(|_| unavailable())?;
+                current(&worker_generation, epoch)?;
+                if acknowledgement.cancelled() {
+                    return Err(unavailable());
+                }
+                if store.write(&secret).is_err() {
+                    let mut health = health.lock().map_err(|_| unavailable())?;
+                    health.available = false;
+                    health.error = Some("vault_unavailable");
+                    return Err(unavailable());
+                }
+                let result = (|| {
+                    current(&worker_generation, epoch)?;
+                    if acknowledgement.cancelled() {
+                        return Err(unavailable());
+                    }
+                    let mut health = health.lock().map_err(|_| unavailable())?;
                     health.available = true;
                     health.stored = true;
                     health.error = None;
                     Ok(())
+                })();
+                match result {
+                    Ok(()) => {
+                        let delivered = completed
+                            .take()
+                            .is_some_and(|completed| completed.send(Ok(())).is_ok());
+                        if delivered && acknowledgement.wait_for_acceptance() {
+                            Ok(())
+                        } else {
+                            remove_unaccepted_write(store.as_ref(), &health)?;
+                            Err(unavailable())
+                        }
+                    }
+                    Err(error) => {
+                        remove_unaccepted_write(store.as_ref(), &health)?;
+                        Err(error)
+                    }
                 }
-                Err(_) => {
-                    health.available = false;
-                    health.error = Some("vault_unavailable");
-                    Err(unavailable())
-                }
+            })();
+            if let Some(completed) = completed {
+                let _ = completed.send(result);
             }
         });
-        match tokio::time::timeout(self.io_timeout, operation).await {
-            Ok(result) => result.map_err(|_| unavailable())?,
+        match tokio::time::timeout(self.io_timeout, completion).await {
+            Ok(result) => {
+                result.map_err(|_| unavailable())??;
+                current(&generation, epoch)?;
+                pending.accept();
+                Ok(())
+            }
             Err(_) => {
-                // Blocking native calls cannot be forcibly interrupted. Epoch
-                // invalidation makes the detached call refuse a late write or
-                // delete it while still holding the serialized store gate.
-                timeout_generation.send_if_modified(|generation| {
-                    if *generation == epoch {
-                        *generation = generation.wrapping_add(1);
-                        true
-                    } else {
-                        false
-                    }
-                });
                 self.mark_error("vault_unavailable");
                 Err(unavailable())
             }
@@ -389,6 +454,24 @@ impl Vault {
             }
         }
     }
+}
+
+fn remove_unaccepted_write(
+    store: &dyn SecretStore,
+    health: &StdMutex<Health>,
+) -> Result<(), ApiError> {
+    // The caller retains the serialized store gate. Native deletion may block;
+    // keep the health mutex free so the async timeout remains bounded.
+    let deleted = store.delete().is_ok();
+    let mut health = health.lock().map_err(|_| unavailable())?;
+    health.available = deleted;
+    health.stored = !deleted;
+    health.error = if deleted {
+        None
+    } else {
+        Some("vault_delete_failed")
+    };
+    Ok(())
 }
 
 fn current(generation: &watch::Sender<u64>, epoch: u64) -> Result<(), ApiError> {
@@ -431,10 +514,13 @@ pub(crate) mod tests {
         let path = directory.join("owner-session-vault.lock");
         let first = NativeLease::acquire_at(&path).unwrap();
         assert!(NativeLease::acquire_at(&path).is_none());
-        assert_eq!(std::fs::read(&path).unwrap(), b"");
+        // Windows mandatory byte-range locking also denies reads through a
+        // second handle. Metadata is available without reading locked bytes.
+        assert_eq!(std::fs::metadata(&path).unwrap().len(), 0);
         drop(first);
         let next = NativeLease::acquire_at(&path).unwrap();
         drop(next);
+        assert_eq!(std::fs::read(&path).unwrap(), b"");
         std::fs::remove_dir_all(directory).unwrap();
     }
 
@@ -512,39 +598,139 @@ pub(crate) mod tests {
         }
     }
 
+    async fn wait_for_native_write(vault: &Vault) {
+        let gate = vault.gate.clone();
+        tokio::task::spawn_blocking(move || drop(gate.lock().unwrap()))
+            .await
+            .unwrap();
+    }
+
     #[tokio::test]
-    async fn timed_out_native_write_is_deleted_when_the_blocking_store_returns() {
+    async fn accepted_native_write_retains_the_current_account_secret() {
+        let store = Arc::new(MemoryStore::default());
+        let vault = Vault::with_store(store.clone());
+        let (generation, _) = watch::channel(0);
+        vault
+            .write(
+                Zeroizing::new(b"test-secret".to_vec()),
+                generation.clone(),
+                0,
+            )
+            .await
+            .unwrap();
+        wait_for_native_write(&vault).await;
+        assert_eq!(*generation.borrow(), 0);
+        assert_eq!(store.read_for_test().unwrap().as_slice(), b"test-secret");
+    }
+
+    #[tokio::test]
+    async fn timed_out_native_write_is_deleted_without_revoking_the_account() {
         let store = Arc::new(MemoryStore::default());
         let gate = Arc::new(WriteGate::default());
         *store.write_gate.lock().unwrap() = Some(gate.clone());
         let mut vault = Vault::with_store(store.clone());
         vault.io_timeout = Duration::from_millis(30);
+        let vault = Arc::new(vault);
         let (generation, _) = watch::channel(0);
-        let write = vault.write(
+        let client = vault.clone();
+        let write_generation = generation.clone();
+        let write = tokio::spawn(async move {
+            client
+                .write(Zeroizing::new(b"test-secret".to_vec()), write_generation, 0)
+                .await
+        });
+        tokio::time::timeout(Duration::from_secs(2), gate.entered.notified())
+            .await
+            .unwrap();
+        let result = write.await.unwrap();
+        gate.release();
+        wait_for_native_write(&vault).await;
+        assert_eq!(result.unwrap_err().code(), "vault_unavailable");
+        assert_eq!(*generation.borrow(), 0);
+        assert!(store.read_for_test().is_none());
+    }
+
+    #[tokio::test]
+    async fn aborted_native_write_is_deleted_without_revoking_the_account() {
+        let store = Arc::new(MemoryStore::default());
+        let gate = Arc::new(WriteGate::default());
+        *store.write_gate.lock().unwrap() = Some(gate.clone());
+        let vault = Arc::new(Vault::with_store(store.clone()));
+        let (generation, _) = watch::channel(0);
+        let client = vault.clone();
+        let write_generation = generation.clone();
+        let write = tokio::spawn(async move {
+            client
+                .write(Zeroizing::new(b"test-secret".to_vec()), write_generation, 0)
+                .await
+        });
+        tokio::time::timeout(Duration::from_secs(2), gate.entered.notified())
+            .await
+            .unwrap();
+        write.abort();
+        let result = write.await;
+        gate.release();
+        wait_for_native_write(&vault).await;
+        assert!(result.unwrap_err().is_cancelled());
+        assert_eq!(*generation.borrow(), 0);
+        assert!(store.read_for_test().is_none());
+    }
+
+    #[tokio::test]
+    async fn dropping_write_after_native_io_completes_removes_unaccepted_secret() {
+        use std::future::Future;
+        use std::task::{Context, Waker};
+
+        let store = Arc::new(MemoryStore::default());
+        let vault = Vault::with_store(store.clone());
+        let (generation, _) = watch::channel(0);
+        let mut write = Box::pin(vault.write(
             Zeroizing::new(b"test-secret".to_vec()),
             generation.clone(),
             0,
+        ));
+        assert!(
+            write
+                .as_mut()
+                .poll(&mut Context::from_waker(Waker::noop()))
+                .is_pending()
         );
-        let result = write.await;
-        assert_eq!(result.unwrap_err().code(), "vault_unavailable");
-        assert_eq!(*generation.borrow(), 1);
-        gate.release();
+        // Leave the async result unpolled until native I/O has finished. A
+        // cancellation in this handoff window must still remove the secret.
         tokio::time::timeout(Duration::from_secs(2), async {
-            loop {
-                if !vault.status(false).stored && store.write_gate.try_lock().is_ok() {
-                    break;
-                }
+            while !vault.status(false).stored {
                 tokio::task::yield_now().await;
             }
         })
         .await
         .unwrap();
-        // Taking the serialized gate ensures the detached native call completed
-        // its post-write stale-generation cleanup before checking the store.
-        let operation_gate = vault.gate.clone();
-        tokio::task::spawn_blocking(move || drop(operation_gate.lock().unwrap()))
+        drop(write);
+        wait_for_native_write(&vault).await;
+        assert_eq!(*generation.borrow(), 0);
+        assert!(store.read_for_test().is_none());
+    }
+
+    #[tokio::test]
+    async fn revoked_account_native_write_is_deleted_and_cannot_be_adopted() {
+        let store = Arc::new(MemoryStore::default());
+        let gate = Arc::new(WriteGate::default());
+        *store.write_gate.lock().unwrap() = Some(gate.clone());
+        let vault = Arc::new(Vault::with_store(store.clone()));
+        let (generation, _) = watch::channel(0);
+        let client = vault.clone();
+        let write_generation = generation.clone();
+        let write = tokio::spawn(async move {
+            client
+                .write(Zeroizing::new(b"test-secret".to_vec()), write_generation, 0)
+                .await
+        });
+        tokio::time::timeout(Duration::from_secs(2), gate.entered.notified())
             .await
             .unwrap();
+        generation.send_replace(1);
+        gate.release();
+        assert_eq!(write.await.unwrap().unwrap_err().code(), "session_revoked");
+        assert_eq!(*generation.borrow(), 1);
         assert!(store.read_for_test().is_none());
     }
 }

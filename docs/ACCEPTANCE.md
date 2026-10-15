@@ -36,7 +36,7 @@ The runner launches a child backend in explicit demo mode, captures the one-use
 launch capability only in memory, establishes its protected local session, and
 repeats a fixed synthetic vehicle-state request. It never signs in or contacts
 Rivian. Options allow 1–86,400 seconds, 1–32 workers and 100–60,000 ms sampling.
-`--binary PATH` selects a locally built executable. A long run still needs an
+`--binary PATH` selects a locally built executable. To bind the run to a packaged source revision, select the executable inside the verified package directory (beside its `BUILD.json` and `source.tar.gz`), rather than the build-cache copy in `target/release`. A long run still needs an
 actual uninterrupted run; a configured one-hour command is not evidence of it.
 
 Reports under `artifacts/benchmarks/` include `raw.json` and `summary.json`:

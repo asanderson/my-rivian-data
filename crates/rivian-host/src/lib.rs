@@ -715,11 +715,23 @@ async fn account_otp(
 async fn account_logout(
     State(state): State<AppState>,
     headers: HeaderMap,
+    axum::Extension(epoch): axum::Extension<NativeEpoch>,
 ) -> Result<Json<Value>, ApiError> {
     let client = state.live_client(&headers, true)?;
     let telemetry = state.telemetry(&headers, true)?;
-    let remote_revoked = client.logout().await;
-    telemetry.stop().await;
+    let source_epoch = account_epoch(epoch)?;
+    let outcome = client
+        .logout_at_epoch(source_epoch)
+        .await
+        .map_err(upstream_error)?;
+    // A retained failure from an earlier stream may have a different source
+    // epoch. Never stop a newer stream; the final native epoch check decides
+    // whether this account disconnect itself was superseded.
+    if let Err(error) = telemetry.stop_at_epoch(source_epoch).await
+        && error.code() != "session_revoked"
+    {
+        return Err(upstream_error(error));
+    }
     state.session_info(&headers, true)?;
     state
         .inner
@@ -730,10 +742,14 @@ async fn account_logout(
         .as_mut()
         .ok_or_else(ApiError::unauthorized)?
         .confirmations
-        .clear();
+        .forget_epoch(source_epoch);
     let vault = client.vault_status().await;
+    if client.authorization_epoch() != outcome.epoch {
+        return Err(account_changed());
+    }
+    state.session_info(&headers, true)?;
     Ok(Json(
-        json!({"state":"signed_out","remembered_session_removed":!state.inner.remember_enabled || (vault.error.is_none() && !vault.stored),"vault":vault,"remote_revoked":remote_revoked}),
+        json!({"state":"signed_out","remembered_session_removed":!state.inner.remember_enabled || (vault.error.is_none() && !vault.stored),"vault":vault,"remote_revoked":outcome.remote_revoked}),
     ))
 }
 
@@ -1005,7 +1021,7 @@ async fn execute_command(
         auth.session.as_mut().ok_or_else(ApiError::unauthorized)?.confirmations.consume(&body.confirmation_id, epoch, Instant::now()).ok_or(ApiError { status: StatusCode::BAD_REQUEST, code: "confirmation_expired", message: "Review the change again. Its confirmation expired, was already used, or belongs to an earlier account connection." })?
     };
     let data = client.execute_confirmed(&ticket.operation_id, &ticket.variables, ticket.epoch).await.map_err(|error| {
-        if matches!(error.code(), "upstream_unavailable" | "upstream_error" | "upstream_schema" | "response_too_large") {
+        if matches!(error.code(), "command_outcome_unknown" | "upstream_unavailable" | "upstream_error" | "upstream_schema" | "response_too_large") {
             ApiError { status: StatusCode::BAD_GATEWAY, code: "command_outcome_unknown", message: "The change's outcome could not be confirmed. Check the vehicle name before preparing another change; it will not be retried automatically." }
         } else { upstream_error(error) }
     })?;
