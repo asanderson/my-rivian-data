@@ -170,7 +170,7 @@ public class InstallerFixture {
     const failure = invoke('fail');
     assert.equal(failure.error, undefined);
     assert.notEqual(failure.status, 0);
-    assert.match(failure.stderr, /Silent installation failed \(exit code 73\)/u);
+    assert.match(failure.stderr, /Silent installation failed \(exit code 73;/u);
     const timeout = invoke('hang');
     assert.equal(timeout.error, undefined, 'The checker must enforce its own deadline');
     assert.notEqual(timeout.status, 0);
