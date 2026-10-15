@@ -31,6 +31,7 @@ main(async () => {
     const portable = path.join(temporary, name);
     verifyPayload(portable);
     assert.equal(run(path.join(portable, build.executable), ['--version'], { capture: true }).trim(), `My Rivian Data ${build.version}`);
+    console.log('Extracted payload integrity and executable version passed; checking embedded application.');
     // Exercise the extracted executable, including embedded assets and native
     // protected execution. No owner account or OS credential store is used.
     const host = await startLocalHost({ binary: path.join(portable, build.executable), demo: true });
@@ -47,6 +48,7 @@ main(async () => {
       }
       assert.equal((await (await host.demoSession()).executeVehicleState()).status, 200);
     } finally { await host.stop(); }
+    console.log('Extracted application UI/WASM/protected-demo checks and native shutdown passed.');
     if (portableOnly) {
       console.log('Artifact hashes, extracted payload, embedded UI/WASM and protected demo execution passed; native installer checks were explicitly skipped.');
       return;

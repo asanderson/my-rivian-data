@@ -37,6 +37,8 @@ A fresh final review additionally reproduced delayed disconnect cleanup affectin
 
 Final Linux verification: 139 Rust tests (71 API, 37 core, 3 confirmation, 21 HTTP security, 7 WASM), 44 UI tests, 14 delivery tests, strict checks, compiled parity and both browser suites. Native platform CI exposed an isolated-RPM-database dependency verification mistake and a Windows mandatory-lock test assumption; these were corrected without weakening payload checks or writer exclusion. Actual owner/OS-vault acceptance remains separate.
 
+Linux x64 and both macOS architectures passed native package CI. Windows subsequently stalled in its lifecycle step. Review confirmed that scripted installer error dialogs lacked silent defaults; these now exit with distinct nonzero codes and preserve verifier diagnostics outside the payload. Lifecycle checks have stage logs and bounded native-process/payload-removal waits, with a Windows-only native failure/timeout regression. The triggering Windows error is not yet established; Windows verification remains pending.
+
 Packaged runtime revision: `752677633c37710ee9766187414a1788545c99dc`. Its clean-source portable package passed extracted payload/embedded UI/WASM/protected-demo checks. The 120-second workload completed 122,338 requests with zero failures; [exact measurements, raw samples and provenance](evidence/2026-10-15/README.md) are retained. All implementable Phase I scope is delivered in PR #6; the release acceptance items below remain open.
 
 ## External release acceptance

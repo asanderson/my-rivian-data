@@ -137,3 +137,50 @@ test('portable archive rejects actual link entries and traversal paths before ex
     }
   } finally { rmSync(temporary, { recursive: true, force: true }); }
 });
+
+test('Windows lifecycle reports native failure codes and terminates a stuck installer tree', { skip: process.platform !== 'win32' }, () => {
+  const temporary = mkdtempSync(path.join(os.tmpdir(), 'rivian-windows-lifecycle-'));
+  const checker = fileURLToPath(new URL('../../packaging/windows/check-install.ps1', import.meta.url));
+  const fixtureName = `installer-fixture-${process.pid}-${path.basename(temporary)}.exe`;
+  const fixture = path.join(temporary, fixtureName);
+  const marker = path.join(temporary, 'child-pid');
+  const source = `using System;
+using System.Diagnostics;
+using System.IO;
+using System.Threading;
+public class InstallerFixture {
+  public static int Main(string[] args) {
+    if (args.Length > 0 && args[0] == "--child") { Thread.Sleep(30000); return 0; }
+    if (Environment.GetEnvironmentVariable("RIVIAN_LIFECYCLE_FIXTURE") == "fail") return 73;
+    var child = Process.Start(Process.GetCurrentProcess().MainModule.FileName, "--child");
+    File.WriteAllText(Environment.GetEnvironmentVariable("RIVIAN_LIFECYCLE_MARKER"), child.Id.ToString());
+    Thread.Sleep(30000);
+    return 0;
+  }
+}`;
+  const compile = path.join(temporary, 'compile.ps1');
+  writeFileSync(compile, `Add-Type -TypeDefinition @'\n${source}\n'@ -OutputAssembly '${fixture.replaceAll("'", "''")}' -OutputType ConsoleApplication\n`);
+  const invoke = mode => spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-File', checker,
+    '-Installer', fixture, '-Version', 'lifecycle-fixture', '-Revision', `${process.pid}-${mode}`, '-TimeoutSeconds', '3'], {
+    encoding: 'utf8', timeout: 15000,
+    env: { ...process.env, RIVIAN_LIFECYCLE_FIXTURE: mode, RIVIAN_LIFECYCLE_MARKER: marker },
+  });
+  try {
+    execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-File', compile], { timeout: 15000 });
+    const failure = invoke('fail');
+    assert.equal(failure.error, undefined);
+    assert.notEqual(failure.status, 0);
+    assert.match(failure.stderr, /Silent installation failed \(exit code 73\)/u);
+    const timeout = invoke('hang');
+    assert.equal(timeout.error, undefined, 'The checker must enforce its own deadline');
+    assert.notEqual(timeout.status, 0);
+    assert.match(timeout.stderr, /Silent installation timed out after 3 seconds/u);
+    assert.match(timeout.stdout, /Starting: Silent installation/u);
+    const childPid = readFileSync(marker, 'utf8');
+    assert.throws(() => process.kill(Number(childPid), 0), /ESRCH/u, 'Timeout must terminate installer descendants');
+  } finally {
+    // Also clean up the fixture when the regression is exercised against old code.
+    spawnSync('taskkill.exe', ['/IM', fixtureName, '/T', '/F'], { encoding: 'utf8' });
+    rmSync(temporary, { recursive: true, force: true });
+  }
+});

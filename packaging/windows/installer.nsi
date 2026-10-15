@@ -24,9 +24,11 @@ InstallDir "$LOCALAPPDATA\My Rivian Data\versions\${VERSION}-${REVISION}"
 
 Function .onInit
   SetShellVarContext current
-  IfFileExists "$INSTDIR\my-rivian-data.exe" 0 +3
-    MessageBox MB_OK|MB_ICONSTOP "This exact build is already installed. Close the app and uninstall that build before reinstalling."
+  IfFileExists "$INSTDIR\my-rivian-data.exe" 0 new_install
+    MessageBox MB_OK|MB_ICONSTOP "This exact build is already installed. Close the app and uninstall that build before reinstalling." /SD IDOK
+    SetErrorLevel 10
     Abort
+  new_install:
 FunctionEnd
 
 Section "Install"
@@ -37,8 +39,12 @@ Section "Install"
   Pop $0
   Pop $1
   ${If} $0 != 0
+    FileOpen $2 "$TEMP\my-rivian-data-${VERSION}-${REVISION}-verify.log" w
+    FileWrite $2 "$1$\r$\n"
+    FileClose $2
     RMDir /r "$INSTDIR"
-    MessageBox MB_OK|MB_ICONSTOP "Installed payload integrity check failed. The previous build remains available."
+    MessageBox MB_OK|MB_ICONSTOP "Installed payload integrity check failed. The previous build remains available." /SD IDOK
+    SetErrorLevel 11
     Abort
   ${EndIf}
   WriteUninstaller "$INSTDIR\Uninstall.exe"
@@ -67,6 +73,8 @@ Section "Uninstall"
   RMDir "$SMPROGRAMS\My Rivian Data"
   DeleteRegKey HKCU "${REGKEY}"
   RMDir /r "$INSTDIR"
-  IfFileExists "$INSTDIR\my-rivian-data.exe" 0 +2
-    MessageBox MB_OK|MB_ICONEXCLAMATION "Close the running app, then remove this build's remaining folder. Other builds were retained."
+  IfFileExists "$INSTDIR\my-rivian-data.exe" 0 uninstall_complete
+    MessageBox MB_OK|MB_ICONEXCLAMATION "Close the running app, then remove this build's remaining folder. Other builds were retained." /SD IDOK
+    SetErrorLevel 12
+  uninstall_complete:
 SectionEnd
