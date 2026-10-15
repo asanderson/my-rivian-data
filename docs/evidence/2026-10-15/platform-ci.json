@@ -1,0 +1,158 @@
+{
+  "schema_version": 1,
+  "delivery_source_revision": "2240fec52f0018ff6f7f8b7f08cbad3d1f9174a8",
+  "benchmarked_runtime_source_revision": "752677633c37710ee9766187414a1788545c99dc",
+  "workflow_run_id": 38669606149,
+  "workflow_run_url": "https://github.com/asanderson/my-rivian-data/actions/runs/38669606149",
+  "event": "push",
+  "recorded_at": "2026-10-15T02:33:20.397Z",
+  "jobs": [
+    {
+      "id": 116209346634,
+      "name": "verify (macos-15, arm64)",
+      "url": "https://github.com/asanderson/my-rivian-data/actions/runs/38669606149/job/116209346634",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-10-15T02:10:47Z",
+      "completed_at": "2026-10-15T02:16:50Z",
+      "checks": [
+        {
+          "name": "Check Windows installer lifecycle before the native build",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Build and verify",
+          "conclusion": "success"
+        },
+        {
+          "name": "Browser smoke test",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Package executable, documentation, notices and corresponding source",
+          "conclusion": "success"
+        },
+        {
+          "name": "Check archive integrity and native package lifecycle",
+          "conclusion": "success"
+        },
+        {
+          "name": "Synthetic backend benchmark",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "id": 116209346844,
+      "name": "verify (windows-2025, x64)",
+      "url": "https://github.com/asanderson/my-rivian-data/actions/runs/38669606149/job/116209346844",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-10-15T02:10:41Z",
+      "completed_at": "2026-10-15T02:20:46Z",
+      "checks": [
+        {
+          "name": "Check Windows installer lifecycle before the native build",
+          "conclusion": "success"
+        },
+        {
+          "name": "Build and verify",
+          "conclusion": "success"
+        },
+        {
+          "name": "Browser smoke test",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Package executable, documentation, notices and corresponding source",
+          "conclusion": "success"
+        },
+        {
+          "name": "Check archive integrity and native package lifecycle",
+          "conclusion": "success"
+        },
+        {
+          "name": "Synthetic backend benchmark",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "id": 116209346883,
+      "name": "verify (macos-15-intel, x64)",
+      "url": "https://github.com/asanderson/my-rivian-data/actions/runs/38669606149/job/116209346883",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-10-15T02:15:05Z",
+      "completed_at": "2026-10-15T02:32:54Z",
+      "checks": [
+        {
+          "name": "Check Windows installer lifecycle before the native build",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Build and verify",
+          "conclusion": "success"
+        },
+        {
+          "name": "Browser smoke test",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Package executable, documentation, notices and corresponding source",
+          "conclusion": "success"
+        },
+        {
+          "name": "Check archive integrity and native package lifecycle",
+          "conclusion": "success"
+        },
+        {
+          "name": "Synthetic backend benchmark",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "id": 116209346887,
+      "name": "verify (ubuntu-22.04, x64)",
+      "url": "https://github.com/asanderson/my-rivian-data/actions/runs/38669606149/job/116209346887",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-10-15T02:10:41Z",
+      "completed_at": "2026-10-15T02:14:27Z",
+      "checks": [
+        {
+          "name": "Check Windows installer lifecycle before the native build",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Build and verify",
+          "conclusion": "success"
+        },
+        {
+          "name": "Browser smoke test",
+          "conclusion": "success"
+        },
+        {
+          "name": "Package executable, documentation, notices and corresponding source",
+          "conclusion": "success"
+        },
+        {
+          "name": "Check archive integrity and native package lifecycle",
+          "conclusion": "success"
+        },
+        {
+          "name": "Synthetic backend benchmark",
+          "conclusion": "success"
+        }
+      ]
+    }
+  ],
+  "limits": [
+    "Unsigned development packages and synthetic/mock workloads only.",
+    "CI Windows NSIS fixtures use a disposable profile and force a Restricted process policy; they verify intact install, duplicate rejection, tampered payload rejection, native version execution and uninstall.",
+    "Real Rivian/vehicle compatibility and native OS credential-store acceptance were not performed.",
+    "Real-certificate signing/notarization, clean-machine acceptance, legitimate vehicle enrollment and independent-provider adversarial review remain open.",
+    "The 120-second retained resource benchmark is a separate exact Linux artifact; later delivery fixes do not change its application source."
+  ]
+}
