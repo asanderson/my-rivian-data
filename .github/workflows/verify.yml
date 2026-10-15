@@ -33,6 +33,14 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '24'
+      - name: Install pinned NSIS compiler
+        if: runner.os == 'Windows'
+        run: choco install nsis --version=3.12 -y --no-progress
+      - name: Check Windows installer lifecycle before the native build
+        if: runner.os == 'Windows'
+        env:
+          RIVIAN_NATIVE_INSTALLER_TESTS: '1'
+        run: node --test scripts/tests/delivery.test.mjs
       - name: Install pinned Rust toolchain
         run: rustup toolchain install 1.99.0 --profile minimal --component rustfmt --component clippy --target wasm32-unknown-unknown
       - name: Install locked dependencies and matching WASM CLI
@@ -48,9 +56,6 @@ jobs:
       - name: Install Linux native packaging tools
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y rpm desktop-file-utils
-      - name: Install pinned NSIS compiler
-        if: runner.os == 'Windows'
-        run: choco install nsis --version=3.12 -y --no-progress
       - name: Package executable, documentation, notices and corresponding source
         run: node scripts/package.mjs
       - name: Check archive integrity and native package lifecycle

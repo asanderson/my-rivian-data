@@ -1,5 +1,8 @@
 param([Parameter(Mandatory=$true)][string]$Installer, [Parameter(Mandatory=$true)][string]$Version, [Parameter(Mandatory=$true)][string]$Revision, [ValidateRange(1,600)][int]$TimeoutSeconds = 120)
 $ErrorActionPreference = 'Stop'
+# Use this engine's bundled modules when pwsh starts powershell.exe through Node.
+# https://learn.microsoft.com/powershell/module/microsoft.powershell.core/about/about_psmodulepath
+$env:PSModulePath = [IO.Path]::Combine($PSHOME, 'Modules')
 
 function Invoke-SilentProcess([string]$FilePath, [string]$Stage) {
   Write-Host "Starting: $Stage (deadline: $TimeoutSeconds seconds)"

@@ -75,6 +75,9 @@ never downloads arbitrary update URLs or replaces its own running executable.
   version's named Start Menu shortcut. Uninstall a specific build through Windows
   Apps or its named uninstaller; other build directories stay intact. Exact-build
   reinstall is rejected until that build has been uninstalled.
+  The bundled integrity verifier uses a process-only PowerShell execution policy
+  so it can run on default Windows client profiles. It checks every payload hash;
+  no user or machine policy is changed, and organizational Group Policy still applies.
 - **macOS:** open the DMG and drag the app to Applications (or `~/Applications`
   for a per-user installation); open the app. Keep a verified copy of the previous
   app/DMG before updating. Quit, move the current app aside, and copy the verified

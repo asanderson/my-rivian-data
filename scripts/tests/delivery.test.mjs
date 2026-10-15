@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, copyFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 // These cases fail if lock hashes are guessed, a changed payload is accepted,
@@ -181,6 +181,75 @@ public class InstallerFixture {
   } finally {
     // Also clean up the fixture when the regression is exercised against old code.
     spawnSync('taskkill.exe', ['/IM', fixtureName, '/T', '/F'], { encoding: 'utf8' });
+    rmSync(temporary, { recursive: true, force: true });
+  }
+});
+
+const makensis = process.env.RIVIAN_MAKENSIS ?? 'C:\\Program Files (x86)\\NSIS\\makensis.exe';
+// Actual installation changes the test profile's Start menu/HKCU pointers. Opt in
+// only on a disposable Windows profile, as the dedicated CI step does.
+test('Windows NSIS verifies its payload, rejects reinstall and removes the installed build', {
+  skip: process.platform !== 'win32' || process.env.RIVIAN_NATIVE_INSTALLER_TESTS !== '1',
+}, async () => {
+  assert.ok(existsSync(makensis), 'The NSIS compiler is required for native installer acceptance');
+  const { fileManifest } = await import('../lib/delivery.mjs');
+  const temporary = mkdtempSync(path.join(os.tmpdir(), 'rivian-nsis-lifecycle-'));
+  const sourceRoot = fileURLToPath(new URL('../../', import.meta.url));
+  const staging = path.join(temporary, 'payload');
+  const installer = path.join(temporary, 'setup.exe');
+  const version = 'installer-fixture';
+  const revision = path.basename(temporary);
+  const installed = path.join(process.env.LOCALAPPDATA, 'My Rivian Data', 'versions', `${version}-${revision}`);
+  const badInstalled = `${installed}-bad`;
+  const restrictedEnv = { ...Object.fromEntries(Object.entries(process.env).filter(([key]) => key.toUpperCase() !== 'PSEXECUTIONPOLICYPREFERENCE')), PSExecutionPolicyPreference: 'Restricted' };
+  mkdirSync(staging);
+  const compile = path.join(temporary, 'compile.ps1');
+  writeFileSync(compile, `Add-Type -TypeDefinition @'
+using System;
+public class VersionFixture {
+  public static int Main(string[] args) {
+    if (args.Length == 1 && args[0] == "--version") { Console.WriteLine("My Rivian Data ${version}"); return 0; }
+    return 64;
+  }
+}
+'@ -OutputAssembly '${path.join(staging, 'my-rivian-data.exe').replaceAll("'", "''")}' -OutputType ConsoleApplication\n`);
+  const invokeInstaller = () => spawnSync(installer, ['/S'], { encoding: 'utf8', timeout: 30000, windowsHide: true, env: restrictedEnv });
+  const buildInstaller = buildRevision => execFileSync(makensis, [`/DVERSION=${version}`, `/DREVISION=${buildRevision}`, `/DSOURCE=${staging}`, `/DOUTPUT=${installer}`,
+    path.join(sourceRoot, 'packaging/windows/installer.nsi')], { timeout: 45000, windowsHide: true });
+  try {
+    execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-File', compile], { timeout: 15000 });
+    copyFileSync(path.join(sourceRoot, 'LICENSE'), path.join(staging, 'LICENSE'));
+    copyFileSync(path.join(sourceRoot, 'packaging/windows/verify.ps1'), path.join(staging, 'verify.ps1'));
+    writeFileSync(path.join(staging, 'FILES.json'), JSON.stringify(fileManifest(staging)));
+    assert.equal(execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
+      "$env:PSModulePath = [IO.Path]::Combine($PSHOME, 'Modules'); Get-ExecutionPolicy"], { encoding: 'utf8', timeout: 15000, env: restrictedEnv }).trim(), 'Restricted');
+    buildInstaller(revision);
+    const first = invokeInstaller();
+    assert.equal(first.error, undefined, 'Silent installation must finish without a hidden dialog');
+    assert.equal(first.status, 0, 'The real verifier must accept the intact payload');
+    assert.equal(execFileSync(path.join(installed, 'my-rivian-data.exe'), ['--version'], { encoding: 'utf8', timeout: 5000 }).trim(), `My Rivian Data ${version}`);
+    const duplicate = invokeInstaller();
+    assert.equal(duplicate.error, undefined);
+    assert.equal(duplicate.status, 10, 'Silent reinstall must reject without a dialog');
+    writeFileSync(path.join(staging, 'LICENSE'), 'changed fixture');
+    buildInstaller(`${revision}-bad`);
+    const rejected = invokeInstaller();
+    assert.equal(rejected.error, undefined, 'Integrity rejection must finish without a hidden dialog');
+    assert.equal(rejected.status, 11, 'The installer must reject a changed payload even under its process policy');
+    assert.equal(existsSync(path.join(badInstalled, 'my-rivian-data.exe')), false);
+    writeFileSync(path.join(installed, 'LICENSE'), 'changed fixture');
+    const tampered = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-File', path.join(installed, 'verify.ps1')], { encoding: 'utf8', timeout: 15000 });
+    assert.notEqual(tampered.status, 0, 'The native verifier must reject changed files');
+    assert.match(tampered.stderr, /Payload integrity check failed/u);
+  } finally {
+    if (existsSync(path.join(installed, 'Uninstall.exe'))) {
+      const removal = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
+        `Start-Process -FilePath '${path.join(installed, 'Uninstall.exe').replaceAll("'", "''")}' -ArgumentList '/S' -Wait`], { encoding: 'utf8', timeout: 30000 });
+      assert.equal(removal.error, undefined, 'Silent uninstall must finish without a hidden dialog');
+      assert.equal(existsSync(installed), false, 'The uninstaller must remove its payload');
+    }
+    rmSync(badInstalled, { recursive: true, force: true });
+    rmSync(path.join(os.tmpdir(), `my-rivian-data-${version}-${revision}-bad-verify.log`), { force: true });
     rmSync(temporary, { recursive: true, force: true });
   }
 });

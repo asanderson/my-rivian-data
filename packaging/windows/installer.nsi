@@ -35,7 +35,9 @@ Section "Install"
   SetShellVarContext current
   SetOutPath "$INSTDIR"
   File /r "${SOURCE}\*"
-  nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -File "$INSTDIR\verify.ps1"'
+  ; Run this bundled verifier under a process-only policy. Group Policy still
+  ; applies; no user/machine policy is written and every payload hash is checked.
+  nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$INSTDIR\verify.ps1"'
   Pop $0
   Pop $1
   ${If} $0 != 0

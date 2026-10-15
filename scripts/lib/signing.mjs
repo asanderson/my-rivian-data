@@ -9,7 +9,12 @@ let macKeychain;
 // Do not print command arguments or captured diagnostics: they may contain
 // certificate passwords or notary credentials. CI supplies these env vars only.
 function secretRun(command, args) {
-  const result = spawnSync(command, args, { cwd: root, shell: false, windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  // Let Windows PowerShell construct its matching module paths when Node was
+  // started by pwsh; signing also needs OS modules such as PKI/Certificate.
+  const env = path.basename(command).toLowerCase() === 'powershell.exe'
+    ? Object.fromEntries(Object.entries(process.env).filter(([key]) => key.toUpperCase() !== 'PSMODULEPATH'))
+    : process.env;
+  const result = spawnSync(command, args, { cwd: root, env, shell: false, windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
   if (result.error || result.status !== 0) throw new Error(`Signing tool ${path.basename(command)} failed; inspect private CI diagnostics.`);
   return result.stdout;
 }

@@ -1,4 +1,7 @@
 $ErrorActionPreference = 'Stop'
+# Use this engine's bundled modules when pwsh starts powershell.exe through Node.
+# https://learn.microsoft.com/powershell/module/microsoft.powershell.core/about/about_psmodulepath
+$env:PSModulePath = [IO.Path]::Combine($PSHOME, 'Modules')
 $manifest = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'FILES.json') -Raw | ConvertFrom-Json
 $files = @(Get-ChildItem -LiteralPath $PSScriptRoot -Recurse -File)
 foreach ($file in $files) {
