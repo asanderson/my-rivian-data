@@ -2,6 +2,8 @@
 
 //! Loopback-only application host with an isolated native Rivian session per launcher.
 
+mod confirmations;
+
 use axum::{
     Json, Router,
     body::Body,
@@ -34,6 +36,8 @@ pub struct AppState {
 
 struct Inner {
     demo: bool,
+    remember_enabled: bool,
+    shutdown: tokio::sync::watch::Sender<bool>,
     authority: String,
     origin: String,
     cookie_name: String,
@@ -57,6 +61,8 @@ struct Session {
     csrf: String,
     capability: String,
     client: Option<Arc<rivian_api::LiveClient>>,
+    telemetry: Arc<rivian_api::telemetry::TelemetryService>,
+    confirmations: confirmations::Confirmations,
     created_at: Instant,
     last_used: Instant,
 }
@@ -74,6 +80,19 @@ impl AppState {
     pub fn new(port: u16) -> std::io::Result<(Self, String)> {
         Self::with_mode_and_lifetimes(
             port,
+            false,
+            true,
+            Duration::from_secs(300),
+            Duration::from_secs(3600),
+            Duration::from_secs(8 * 3600),
+        )
+    }
+
+    /// Session-only mode never reads or writes an OS credential entry.
+    pub fn new_ephemeral(port: u16) -> std::io::Result<(Self, String)> {
+        Self::with_mode_and_lifetimes(
+            port,
+            false,
             false,
             Duration::from_secs(300),
             Duration::from_secs(3600),
@@ -100,6 +119,7 @@ impl AppState {
         Self::with_mode_and_lifetimes(
             port,
             true,
+            false,
             bootstrap_lifetime,
             session_idle,
             session_lifetime,
@@ -109,6 +129,7 @@ impl AppState {
     fn with_mode_and_lifetimes(
         port: u16,
         demo: bool,
+        remember_enabled: bool,
         bootstrap_lifetime: Duration,
         session_idle: Duration,
         session_lifetime: Duration,
@@ -120,6 +141,8 @@ impl AppState {
             Self {
                 inner: Arc::new(Inner {
                     demo,
+                    remember_enabled,
+                    shutdown: tokio::sync::watch::channel(false).0,
                     origin: format!("http://{authority}"),
                     authority,
                     cookie_name,
@@ -140,6 +163,23 @@ impl AppState {
 
     pub fn origin(&self) -> &str {
         &self.inner.origin
+    }
+
+    pub fn shutdown_receiver(&self) -> tokio::sync::watch::Receiver<bool> {
+        self.inner.shutdown.subscribe()
+    }
+
+    fn telemetry(
+        &self,
+        headers: &HeaderMap,
+        csrf: bool,
+    ) -> Result<Arc<rivian_api::telemetry::TelemetryService>, ApiError> {
+        self.live_client(headers, csrf)?;
+        let auth = self.inner.auth.lock().map_err(|_| ApiError::internal())?;
+        auth.session
+            .as_ref()
+            .map(|session| session.telemetry.clone())
+            .ok_or_else(ApiError::unauthorized)
     }
 
     fn mode(&self) -> &'static str {
@@ -307,6 +347,16 @@ pub fn app(state: AppState) -> Router {
         .route("/api/session", get(session))
         .route("/api/logout", post(logout))
         .route("/api/account", get(account))
+        .route("/api/account/vault", get(account_vault))
+        .route("/api/account/remember", post(account_remember))
+        .route("/api/account/otp/resend", post(account_resend))
+        .route("/api/telemetry", get(telemetry_snapshot))
+        .route("/api/telemetry/start", post(telemetry_start))
+        .route("/api/telemetry/stop", post(telemetry_stop))
+        .route("/api/catalog/admit", post(admit_document))
+        .route("/api/commands/prepare", post(prepare_command))
+        .route("/api/commands/execute", post(execute_command))
+        .route("/api/application/quit", post(quit_application))
         .route("/api/account/login", post(account_login))
         .route("/api/account/otp", post(account_otp))
         .route("/api/account/logout", post(account_logout))
@@ -352,7 +402,7 @@ async fn security_headers(request: Request, next: Next) -> Response {
     response
 }
 
-async fn boundary(State(state): State<AppState>, request: Request, next: Next) -> Response {
+async fn boundary(State(state): State<AppState>, mut request: Request, next: Next) -> Response {
     let headers = request.headers();
     if single_header(headers, "host") != Some(state.inner.authority.as_str()) {
         return ApiError::forbidden().into_response();
@@ -382,6 +432,18 @@ async fn boundary(State(state): State<AppState>, request: Request, next: Next) -
     {
         return error.into_response();
     }
+    // Capture account authority BEFORE body extraction or any queued async work.
+    if path.starts_with("/api/") && path != "/api/bootstrap" && path != "/api/health" {
+        let epoch = if state.inner.demo {
+            None
+        } else {
+            state
+                .live_client(headers, unsafe_method)
+                .ok()
+                .map(|client| client.authorization_epoch())
+        };
+        request.extensions_mut().insert(NativeEpoch(epoch));
+    }
     next.run(request).await
 }
 
@@ -399,43 +461,59 @@ async fn bootstrap(
     State(state): State<AppState>,
     Json(body): Json<BootstrapRequest>,
 ) -> Result<Response, ApiError> {
-    let mut auth = state.inner.auth.lock().map_err(|_| ApiError::internal())?;
-    let bootstrap = auth.bootstrap.as_ref().ok_or_else(ApiError::unauthorized)?;
-    if Instant::now() >= bootstrap.expires_at {
-        auth.bootstrap = None;
-        return Err(ApiError::unauthorized());
-    }
-    if !secret_matches(&bootstrap.secret, &body.token) {
-        return Err(ApiError::unauthorized());
-    }
-    let now = Instant::now();
-    let session = Session {
-        secret: random_secret().map_err(|_| ApiError::internal())?,
-        csrf: random_secret().map_err(|_| ApiError::internal())?,
-        capability: random_secret().map_err(|_| ApiError::internal())?,
-        client: if state.inner.demo {
+    let (response, client) = {
+        let mut auth = state.inner.auth.lock().map_err(|_| ApiError::internal())?;
+        let bootstrap = auth.bootstrap.as_ref().ok_or_else(ApiError::unauthorized)?;
+        if Instant::now() >= bootstrap.expires_at {
+            auth.bootstrap = None;
+            return Err(ApiError::unauthorized());
+        }
+        if !secret_matches(&bootstrap.secret, &body.token) {
+            return Err(ApiError::unauthorized());
+        }
+        let client = if state.inner.demo {
             None
         } else {
             Some(Arc::new(
-                rivian_api::LiveClient::new().map_err(|_| ApiError::internal())?,
+                if state.inner.remember_enabled {
+                    rivian_api::LiveClient::new()
+                } else {
+                    rivian_api::LiveClient::memory_only()
+                }
+                .map_err(|_| ApiError::internal())?,
             ))
-        },
-        created_at: now,
-        last_used: now,
+        };
+        let now = Instant::now();
+        let session = Session {
+            secret: random_secret().map_err(|_| ApiError::internal())?,
+            csrf: random_secret().map_err(|_| ApiError::internal())?,
+            capability: random_secret().map_err(|_| ApiError::internal())?,
+            client: client.clone(),
+            telemetry: Arc::new(rivian_api::telemetry::TelemetryService::new()),
+            confirmations: confirmations::Confirmations::default(),
+            created_at: now,
+            last_used: now,
+        };
+        let cookie = format!(
+            "{}={}; HttpOnly; SameSite=Strict; Path=/",
+            state.inner.cookie_name, session.secret
+        );
+        let mut response = Json(json!({"csrf_token":session.csrf,"app_capability":session.capability,"mode":state.mode(),"expires_in_seconds":state.inner.session_lifetime.as_secs()})).into_response();
+        response.headers_mut().insert(
+            header::SET_COOKIE,
+            HeaderValue::from_str(&cookie).map_err(|_| ApiError::internal())?,
+        );
+        auth.bootstrap = None;
+        auth.session = Some(session);
+        (response, client)
     };
-    let cookie = format!(
-        "{}={}; HttpOnly; SameSite=Strict; Path=/",
-        state.inner.cookie_name, session.secret
-    );
-    let body = json!({"csrf_token": session.csrf, "app_capability": session.capability, "mode": state.mode(), "expires_in_seconds": state.inner.session_lifetime.as_secs()});
-    // The same mutex protects both consumption and session creation, including races.
-    auth.bootstrap = None;
-    auth.session = Some(session);
-    let mut response = Json(body).into_response();
-    response.headers_mut().insert(
-        header::SET_COOKIE,
-        HeaderValue::from_str(&cookie).map_err(|_| ApiError::internal())?,
-    );
+    // OS/network IO never holds the synchronous local-authority mutex. Failure
+    // to restore leaves the owner able to use a protected session-only sign-in.
+    if state.inner.remember_enabled
+        && let Some(client) = client
+    {
+        let _ = client.restore_remembered().await;
+    }
     Ok(response)
 }
 
@@ -446,15 +524,7 @@ async fn session(
     Ok(Json(state.session_info(&headers, false)?))
 }
 
-async fn logout(State(state): State<AppState>, headers: HeaderMap) -> Result<Response, ApiError> {
-    state.session_info(&headers, true)?;
-    state
-        .inner
-        .auth
-        .lock()
-        .map_err(|_| ApiError::internal())?
-        .session = None;
-    let mut response = StatusCode::NO_CONTENT.into_response();
+fn expire_cookie(state: &AppState, response: &mut Response) -> Result<(), ApiError> {
     let cookie = format!(
         "{}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0",
         state.inner.cookie_name
@@ -463,6 +533,46 @@ async fn logout(State(state): State<AppState>, headers: HeaderMap) -> Result<Res
         header::SET_COOKIE,
         HeaderValue::from_str(&cookie).map_err(|_| ApiError::internal())?,
     );
+    Ok(())
+}
+
+async fn logout(State(state): State<AppState>, headers: HeaderMap) -> Result<Response, ApiError> {
+    state.session_info(&headers, true)?;
+    let client = {
+        let mut auth = state.inner.auth.lock().map_err(|_| ApiError::internal())?;
+        let session = auth.session.take().ok_or_else(ApiError::unauthorized)?;
+        let client = session.client.clone();
+        drop(session); // revoke before awaiting remote or OS work
+        client
+    };
+    let forgotten = if let Some(client) = client {
+        client.logout().await;
+        let vault = client.vault_status().await;
+        !state.inner.remember_enabled || (vault.error.is_none() && !vault.stored)
+    } else {
+        true
+    };
+    let mut response =
+        Json(json!({"state":"ended","remembered_session_removed":forgotten})).into_response();
+    expire_cookie(&state, &mut response)?;
+    Ok(response)
+}
+
+async fn quit_application(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(_body): Json<EmptyRequest>,
+) -> Result<Response, ApiError> {
+    state.session_info(&headers, true)?;
+    state
+        .inner
+        .auth
+        .lock()
+        .map_err(|_| ApiError::internal())?
+        .session = None;
+    let mut response = Json(json!({"state":"stopping"})).into_response();
+    expire_cookie(&state, &mut response)?;
+    state.inner.shutdown.send_replace(true);
     Ok(response)
 }
 
@@ -470,42 +580,35 @@ async fn catalog(State(state): State<AppState>) -> Json<Value> {
     if state.inner.demo {
         return Json(json!(rivian_core::catalog()));
     }
-    // Expose the reviewed upstream document, never native headers, tokens or
-    // account-resolved variables. These specifications contain no credentials.
-    let entries: Vec<Value> = rivian_core::live::catalog()
-        .into_iter()
-        .map(|operation| {
-            let specification = rivian_core::live::request(
-                &operation.id,
-                &operation.example_variables,
-                Some("resolved-by-native-client"),
-            );
-            let mut entry = json!(operation);
-            if let Ok(specification) = specification {
-                entry["upstream_operation"] = json!(specification.operation_name);
-                entry["upstream_document"] = json!(specification.query);
-                entry["endpoint"] = json!(specification.endpoint.url());
-            }
-            entry
-        })
-        .collect();
+    let mut entries = rivian_core::inventory::enrich_catalog(&rivian_core::live::catalog());
+    for entry in &mut entries {
+        entry["upstream_operation"] = entry["operation_name"].clone();
+        entry["upstream_document"] = entry["graphql_document"].clone();
+    }
     Json(json!(entries))
 }
 async fn vehicles(
     State(state): State<AppState>,
     headers: HeaderMap,
+    axum::Extension(epoch): axum::Extension<NativeEpoch>,
 ) -> Result<Json<Value>, ApiError> {
     state.session_info(&headers, false)?;
     if state.inner.demo {
         return Ok(Json(json!(rivian_core::demo_vehicles())));
     }
     let client = state.live_client(&headers, false)?;
-    let result = client.vehicles().await.map_err(upstream_error)?;
+    let result = client
+        .vehicles_at_epoch(account_epoch(epoch)?)
+        .await
+        .map_err(upstream_error)?;
     state.session_info(&headers, false)?;
     Ok(Json(result))
 }
 
 fn upstream_error(error: rivian_api::ApiError) -> ApiError {
+    if error.code() == "session_revoked" {
+        return account_changed();
+    }
     let code = error.code();
     let status = match code {
         "account_auth_required" => StatusCode::UNAUTHORIZED,
@@ -516,7 +619,9 @@ fn upstream_error(error: rivian_api::ApiError) -> ApiError {
         | "mfa_required"
         | "mfa_expired"
         | "invalid_operation" => StatusCode::BAD_REQUEST,
-        "vehicle_not_owned" => StatusCode::FORBIDDEN,
+        "session_revoked" => StatusCode::UNAUTHORIZED,
+        "vault_unavailable" => StatusCode::SERVICE_UNAVAILABLE,
+        "vehicle_not_owned" | "resource_not_owned" => StatusCode::FORBIDDEN,
         _ => StatusCode::BAD_GATEWAY,
     };
     ApiError {
@@ -541,6 +646,8 @@ async fn account(
 struct LoginRequest {
     email: String,
     password: String,
+    #[serde(default)]
+    remember: bool,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -551,9 +658,14 @@ struct OtpRequest {
 async fn account_login(
     State(state): State<AppState>,
     headers: HeaderMap,
+    axum::Extension(epoch): axum::Extension<NativeEpoch>,
     Json(body): Json<LoginRequest>,
 ) -> Result<Json<Value>, ApiError> {
     let client = state.live_client(&headers, true)?;
+    let epoch = account_epoch(epoch)?;
+    if client.authorization_epoch() != epoch {
+        return Err(account_changed());
+    }
     if body.email.len() > 254
         || !body.email.contains('@')
         || body.password.is_empty()
@@ -566,16 +678,22 @@ async fn account_login(
         });
     }
     let result = client
-        .login(&body.email, &body.password)
+        .login_with_remember(&body.email, &body.password, body.remember, epoch)
         .await
         .map_err(upstream_error)?;
     state.session_info(&headers, true)?;
-    Ok(Json(json!(result)))
+    let mut response = json!(result);
+    let vault = client.vault_status().await;
+    response["remember_problem"] =
+        json!(body.remember && (!vault.remembering || vault.error.is_some()));
+    response["vault"] = json!(vault);
+    Ok(Json(response))
 }
 
 async fn account_otp(
     State(state): State<AppState>,
     headers: HeaderMap,
+    axum::Extension(epoch): axum::Extension<NativeEpoch>,
     Json(body): Json<OtpRequest>,
 ) -> Result<Json<Value>, ApiError> {
     let client = state.live_client(&headers, true)?;
@@ -587,7 +705,7 @@ async fn account_otp(
         });
     }
     let result = client
-        .verify_otp(&body.code)
+        .verify_otp_at_epoch(&body.code, account_epoch(epoch)?)
         .await
         .map_err(upstream_error)?;
     state.session_info(&headers, true)?;
@@ -599,9 +717,24 @@ async fn account_logout(
     headers: HeaderMap,
 ) -> Result<Json<Value>, ApiError> {
     let client = state.live_client(&headers, true)?;
-    client.logout().await;
+    let telemetry = state.telemetry(&headers, true)?;
+    let remote_revoked = client.logout().await;
+    telemetry.stop().await;
     state.session_info(&headers, true)?;
-    Ok(Json(json!({"state":"signed_out"})))
+    state
+        .inner
+        .auth
+        .lock()
+        .map_err(|_| ApiError::internal())?
+        .session
+        .as_mut()
+        .ok_or_else(ApiError::unauthorized)?
+        .confirmations
+        .clear();
+    let vault = client.vault_status().await;
+    Ok(Json(
+        json!({"state":"signed_out","remembered_session_removed":!state.inner.remember_enabled || (vault.error.is_none() && !vault.stored),"vault":vault,"remote_revoked":remote_revoked}),
+    ))
 }
 
 #[derive(Deserialize)]
@@ -629,6 +762,7 @@ async fn validate(
 async fn execute(
     State(state): State<AppState>,
     headers: HeaderMap,
+    axum::Extension(epoch): axum::Extension<NativeEpoch>,
     Json(body): Json<OperationRequest>,
 ) -> Result<Json<Value>, ApiError> {
     state.session_info(&headers, true)?;
@@ -636,9 +770,16 @@ async fn execute(
         if !rivian_core::live::validate_request(&body.operation_id, &body.variables).valid {
             return Err(ApiError::invalid());
         }
+        if rivian_core::live::requires_confirmation(&body.operation_id) {
+            return Err(ApiError {
+                status: StatusCode::BAD_REQUEST,
+                code: "confirmation_required",
+                message: "Review and confirm this change before it is sent.",
+            });
+        }
         let client = state.live_client(&headers, true)?;
         let data = client
-            .execute(&body.operation_id, &body.variables)
+            .execute_read_at_epoch(&body.operation_id, &body.variables, account_epoch(epoch)?)
             .await
             .map_err(upstream_error)?;
         state.session_info(&headers, true)?;
@@ -650,6 +791,226 @@ async fn execute(
     let data = rivian_core::execute_demo(&body.operation_id, &body.variables)
         .map_err(|_| ApiError::invalid())?;
     Ok(Json(json!({"data": data, "mode": "demo"})))
+}
+
+#[derive(Clone, Copy)]
+struct NativeEpoch(Option<u64>);
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct EmptyRequest {}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RememberRequest {
+    remember: bool,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct TelemetryRequest {
+    vehicle_id: String,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DocumentRequest {
+    endpoint: String,
+    operation_name: String,
+    document: String,
+    variables: Value,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ConfirmationRequest {
+    confirmation_id: String,
+}
+
+fn account_epoch(epoch: NativeEpoch) -> Result<u64, ApiError> {
+    epoch.0.ok_or_else(ApiError::unauthorized)
+}
+fn account_changed() -> ApiError {
+    ApiError {
+        status: StatusCode::UNAUTHORIZED,
+        code: "account_auth_required",
+        message: "The account connection changed. Reconnect before trying again.",
+    }
+}
+
+async fn account_vault(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Value>, ApiError> {
+    let client = state.live_client(&headers, false)?;
+    let result = client.vault_status().await;
+    state.session_info(&headers, false)?;
+    Ok(Json(json!(result)))
+}
+async fn account_remember(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    axum::Extension(epoch): axum::Extension<NativeEpoch>,
+    Json(body): Json<RememberRequest>,
+) -> Result<Json<Value>, ApiError> {
+    let client = state.live_client(&headers, true)?;
+    let result = client
+        .remember_at_epoch(body.remember, account_epoch(epoch)?)
+        .await
+        .map_err(upstream_error)?;
+    state.session_info(&headers, true)?;
+    Ok(Json(json!(result)))
+}
+async fn account_resend(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    axum::Extension(epoch): axum::Extension<NativeEpoch>,
+    Json(_body): Json<EmptyRequest>,
+) -> Result<Json<Value>, ApiError> {
+    let client = state.live_client(&headers, true)?;
+    let result = client
+        .resend_otp_at_epoch(account_epoch(epoch)?)
+        .await
+        .map_err(upstream_error)?;
+    state.session_info(&headers, true)?;
+    Ok(Json(json!(result)))
+}
+async fn telemetry_start(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    axum::Extension(epoch): axum::Extension<NativeEpoch>,
+    Json(body): Json<TelemetryRequest>,
+) -> Result<Json<Value>, ApiError> {
+    let client = state.live_client(&headers, true)?;
+    let credentials = client
+        .subscription_credentials_at_epoch(&body.vehicle_id, account_epoch(epoch)?)
+        .await
+        .map_err(upstream_error)?;
+    let service = state.telemetry(&headers, true)?;
+    service.start(credentials).await.map_err(upstream_error)?;
+    state.session_info(&headers, true)?;
+    Ok(Json(json!(service.snapshot().await)))
+}
+async fn telemetry_stop(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    axum::Extension(epoch): axum::Extension<NativeEpoch>,
+    Json(_body): Json<EmptyRequest>,
+) -> Result<Json<Value>, ApiError> {
+    let client = state.live_client(&headers, true)?;
+    if client.authorization_epoch() != account_epoch(epoch)? {
+        return Err(account_changed());
+    }
+    let service = state.telemetry(&headers, true)?;
+    service
+        .stop_at_epoch(account_epoch(epoch)?)
+        .await
+        .map_err(upstream_error)?;
+    state.session_info(&headers, true)?;
+    Ok(Json(json!(service.snapshot().await)))
+}
+async fn telemetry_snapshot(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Value>, ApiError> {
+    let client = state.live_client(&headers, false)?;
+    let service = state.telemetry(&headers, false)?;
+    let snapshot = service.snapshot().await;
+    if let Some(source_epoch) = snapshot.authorization_epoch {
+        if client.authorization_epoch() != source_epoch {
+            // A delayed poll must neither return an earlier account's readings
+            // nor stop or invalidate a newer connection.
+            state.session_info(&headers, false)?;
+            return Ok(Json(
+                json!({"state":"stopped","vehicle_id":null,"compatibility":"unverified","readings":null,"raw_topics":[],"error_code":"session_revoked"}),
+            ));
+        }
+        if snapshot.state == rivian_api::telemetry::ConnectionState::AuthenticationRequired
+            && snapshot.error_code == Some("account_auth_required")
+        {
+            client.require_sign_in_at_epoch(source_epoch).await;
+        }
+    }
+    state.session_info(&headers, false)?;
+    Ok(Json(json!(snapshot)))
+}
+async fn admit_document(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<DocumentRequest>,
+) -> Result<Json<Value>, ApiError> {
+    state.live_client(&headers, true)?;
+    let operation_id =
+        rivian_core::live::admit_document(&body.endpoint, &body.operation_name, &body.document)
+            .ok_or_else(ApiError::invalid)?;
+    if !rivian_core::live::validate_request(&operation_id, &body.variables).valid {
+        return Err(ApiError::invalid());
+    }
+    Ok(Json(
+        json!({"admitted":true,"requires_confirmation":rivian_core::live::requires_confirmation(&operation_id),"operation_id":operation_id,"variables":body.variables}),
+    ))
+}
+async fn prepare_command(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    axum::Extension(epoch): axum::Extension<NativeEpoch>,
+    Json(body): Json<OperationRequest>,
+) -> Result<Json<Value>, ApiError> {
+    let client = state.live_client(&headers, true)?;
+    let epoch = account_epoch(epoch)?;
+    if !rivian_core::live::requires_confirmation(&body.operation_id)
+        || !rivian_core::live::validate_request(&body.operation_id, &body.variables).valid
+    {
+        return Err(ApiError::invalid());
+    }
+    let vehicle = body
+        .variables
+        .get("vehicle_id")
+        .and_then(Value::as_str)
+        .ok_or_else(ApiError::invalid)?;
+    client
+        .check_vehicle_access_at_epoch(vehicle, epoch)
+        .await
+        .map_err(upstream_error)?;
+    state.session_info(&headers, true)?;
+    let id = random_secret().map_err(|_| ApiError::internal())?;
+    let mut auth = state.inner.auth.lock().map_err(|_| ApiError::internal())?;
+    let session = auth.session.as_mut().ok_or_else(ApiError::unauthorized)?;
+    if !session.confirmations.issue(
+        id.clone(),
+        body.operation_id.clone(),
+        body.variables.clone(),
+        epoch,
+        Instant::now(),
+    ) {
+        return Err(ApiError {
+            status: StatusCode::TOO_MANY_REQUESTS,
+            code: "confirmation_limit",
+            message: "Too many pending changes. Wait two minutes before preparing another change.",
+        });
+    }
+    Ok(Json(
+        json!({"confirmation_id":id,"operation_id":body.operation_id,"variables":body.variables,"expires_in_seconds":120}),
+    ))
+}
+async fn execute_command(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    axum::Extension(epoch): axum::Extension<NativeEpoch>,
+    Json(body): Json<ConfirmationRequest>,
+) -> Result<Json<Value>, ApiError> {
+    let client = state.live_client(&headers, true)?;
+    let epoch = account_epoch(epoch)?;
+    if body.confirmation_id.len() != 64 {
+        return Err(ApiError::invalid());
+    }
+    let ticket = {
+        let mut auth = state.inner.auth.lock().map_err(|_| ApiError::internal())?;
+        auth.session.as_mut().ok_or_else(ApiError::unauthorized)?.confirmations.consume(&body.confirmation_id, epoch, Instant::now()).ok_or(ApiError { status: StatusCode::BAD_REQUEST, code: "confirmation_expired", message: "Review the change again. Its confirmation expired, was already used, or belongs to an earlier account connection." })?
+    };
+    let data = client.execute_confirmed(&ticket.operation_id, &ticket.variables, ticket.epoch).await.map_err(|error| {
+        if matches!(error.code(), "upstream_unavailable" | "upstream_error" | "upstream_schema" | "response_too_large") {
+            ApiError { status: StatusCode::BAD_GATEWAY, code: "command_outcome_unknown", message: "The change's outcome could not be confirmed. Check the vehicle name before preparing another change; it will not be retried automatically." }
+        } else { upstream_error(error) }
+    })?;
+    state.session_info(&headers, true)?;
+    Ok(Json(json!({"mode":"live","data":data})))
 }
 
 async fn static_asset(request: Request) -> Response {

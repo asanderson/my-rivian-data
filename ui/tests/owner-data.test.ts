@@ -60,3 +60,11 @@ test('live history accepts explicit missing readings but not an incorrectly assi
   assert.throws(() => readChargingHistory({ ...live, sessions: [{ ...session, duration_minutes: -1 }] }, id, 'live'));
   assert.throws(() => readVehicleLocation({ vehicle_id: id, location: { latitude: 91, longitude: 0, accuracy_m: null } }, id, 'live'));
 });
+test('HTTP source timestamps survive parsing and map upstream names to owner readings', () => {
+  const at = '2026-10-14T12:05:00Z';
+  const live = readVehicleState({ vehicle: { ...vehicle, source: 'live', field_observed_at: { batteryLevel: at } } }, id, 'live');
+  assert.equal(live.field_observed_at?.battery_percent, at);
+  assert.equal(readChargingStatus({ ...status, field_observed_at: { batteryLimit: at } }, id, 'live').field_observed_at?.limit_percent, at);
+  assert.equal(readVehicleLocation({ ...position, observed_at: at }, id, 'live').field_observed_at?.location, at);
+  assert.throws(() => readVehicleState({ vehicle: { ...vehicle, source: 'live', field_observed_at: { batteryLevel: 'today' } } }, id, 'live'));
+});

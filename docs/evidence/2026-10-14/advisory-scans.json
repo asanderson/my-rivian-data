@@ -1,0 +1,71 @@
+{
+  "date": "2026-10-14",
+  "cargo_audit_version": "0.22.2",
+  "cargo_lock_sha256": "ba932998416bf5eda2f1e1071be8538cf079fd09d07596bc425101ba124844e6",
+  "npm_lock_sha256": "bb5f07882c2ebf29c1228325496912be65e56a483eb987e0a86f65f9a7c4d02c",
+  "cargo": {
+    "database": {
+      "advisory-count": 1329,
+      "last-commit": "edb58f5974b83eb8302332821cb6d389777aa351",
+      "last-updated": "2026-10-14T22:18:32+02:00"
+    },
+    "lockfile": {
+      "dependency-count": 315
+    },
+    "settings": {
+      "target_arch": [],
+      "target_os": [],
+      "severity": null,
+      "ignore": [],
+      "informational_warnings": [
+        "unmaintained",
+        "unsound",
+        "notice"
+      ]
+    },
+    "vulnerabilities": {
+      "found": false,
+      "count": 0,
+      "list": []
+    },
+    "warnings": {}
+  },
+  "npm": {
+    "metadata": {
+      "vulnerabilities": {
+        "info": 0,
+        "low": 0,
+        "moderate": 0,
+        "high": 0,
+        "critical": 0,
+        "total": 0
+      },
+      "dependencies": {
+        "prod": 4,
+        "dev": 67,
+        "optional": 47,
+        "peer": 0,
+        "peerOptional": 0,
+        "total": 70
+      }
+    },
+    "vulnerabilities": {}
+  },
+  "remediation": {
+    "package": "rustls",
+    "before": "0.23.45",
+    "after": "0.23.46",
+    "advisories": [
+      "RUSTSEC-2026-0346",
+      "RUSTSEC-2026-0347",
+      "RUSTSEC-2026-0348",
+      "RUSTSEC-2026-0349"
+    ],
+    "upstream": "https://github.com/rustls/rustls/releases/tag/v/0.23.46"
+  },
+  "limits": [
+    "Advisory databases and locks at this snapshot only.",
+    "No OS, browser, signing or real-account security certification is implied.",
+    "No advisory ignore exceptions were used."
+  ]
+}

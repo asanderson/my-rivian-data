@@ -8,6 +8,15 @@ Object.defineProperty(globalThis, 'sessionStorage', { value: { getItem: (key: st
 const realFetch = globalThis.fetch;
 afterEach(() => { globalThis.fetch = realFetch; clearSession(); });
 
+test('polling requests carry their view cancellation signal', async () => {
+  let signal: AbortSignal | undefined;
+  globalThis.fetch = async (_path, options) => { signal = options?.signal ?? undefined; return new Response('{}'); };
+  const controller = new AbortController();
+  await request('/api/telemetry', undefined, controller.signal);
+  assert.ok(signal); assert.equal(signal.aborted, false);
+  controller.abort(); assert.equal(signal.aborted, true);
+});
+
 test('bootstrap stays in the request body; later writes receive the in-memory CSRF token', async () => {
   const calls: { path: unknown; options: RequestInit | undefined }[] = [];
   globalThis.fetch = async (path, options) => {

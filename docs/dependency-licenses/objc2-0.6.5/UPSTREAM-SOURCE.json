@@ -1,0 +1,5 @@
+{
+  "source": "https://github.com/madsmtm/objc2/blob/d7d2fa23ceaa5e6096c923b081040e5d81b3b9df/LICENSE.md",
+  "git_blob_sha1": "540ae4c81adb5f64a9f61e222b688880da24300e",
+  "origin": "Upstream license at the published crate's .cargo_vcs_info commit; absent from published crate archive. Retained verbatim."
+}

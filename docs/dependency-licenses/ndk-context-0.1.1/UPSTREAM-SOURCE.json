@@ -1,0 +1,5 @@
+{
+  "source": "https://github.com/rust-mobile/ndk/blob/10f2ba388fca20f7349996ebae26ccda7a6fda5c/LICENSE-MIT",
+  "git_blob_sha1": "9cf106272ac3b56b0c4c80218e8fc10a664ca5f4",
+  "origin": "Upstream license at the published crate's .cargo_vcs_info commit; absent from published crate archive. Retained verbatim."
+}

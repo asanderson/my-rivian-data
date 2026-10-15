@@ -6,6 +6,7 @@ use std::net::{Ipv4Addr, SocketAddrV4};
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut demo = false;
+    let mut session_only = false;
     let mut port = 0_u16;
     let mut open = true;
     let mut print_launch_url = false;
@@ -13,6 +14,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--demo" => demo = true,
+            "--session-only" => session_only = true,
+            "--catalog-json" => {
+                println!(
+                    "{}",
+                    serde_json::json!({"catalog":rivian_core::inventory::enrich_catalog(&rivian_core::live::catalog()),"inventory":rivian_core::inventory::snapshot()})
+                );
+                return Ok(());
+            }
             "--port" => port = args.next().ok_or("--port requires a number")?.parse()?,
             "--no-open" => open = false,
             "--print-launch-url" => print_launch_url = true,
@@ -22,7 +31,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             "--help" | "-h" => {
                 println!(
-                    "My Rivian Data\nYour vehicles. Your data.\n\nUsage: my-rivian-data [--demo] [--port NUMBER] [--no-open] [--print-launch-url]\n\nDefault: random IPv4 loopback port; opens your browser.\n--print-launch-url explicitly prints a sensitive, single-use, five-minute link.\nDefault mode connects to Rivian after you sign in. Use --demo for offline sample data."
+                    "My Rivian Data\nYour vehicles. Your data.\n\nUsage: my-rivian-data [--demo] [--session-only] [--port NUMBER] [--no-open] [--print-launch-url]\n\nDefault: random IPv4 loopback port; opens your browser.\n--print-launch-url explicitly prints a sensitive, single-use, five-minute link.\nDefault mode connects to Rivian after you sign in. Use --demo for offline sample data. --session-only disables reading or writing remembered account entries. --catalog-json exports the reviewed non-secret catalog."
                 );
                 return Ok(());
             }
@@ -33,6 +42,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         tokio::net::TcpListener::bind(SocketAddrV4::new(Ipv4Addr::LOCALHOST, port)).await?;
     let (state, bootstrap) = if demo {
         AppState::new_demo(listener.local_addr()?.port())?
+    } else if session_only {
+        AppState::new_ephemeral(listener.local_addr()?.port())?
     } else {
         AppState::new(listener.local_addr()?.port())?
     };
@@ -62,9 +73,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "Could not open a browser. Restart with --no-open --print-launch-url for an explicit one-use link."
         );
     }
+    let mut shutdown = state.shutdown_receiver();
     axum::serve(listener, app(state))
-        .with_graceful_shutdown(async {
-            let _ = tokio::signal::ctrl_c().await;
+        .with_graceful_shutdown(async move {
+            tokio::select! { _ = tokio::signal::ctrl_c() => {}, _ = shutdown.changed() => {} }
         })
         .await?;
     Ok(())

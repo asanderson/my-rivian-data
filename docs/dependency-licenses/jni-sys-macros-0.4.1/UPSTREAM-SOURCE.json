@@ -1,0 +1,5 @@
+{
+  "source": "https://github.com/jni-rs/jni-sys/blob/64d77b7a5f119d7b55b4e2c169a4668067ff59e6/LICENSE-MIT",
+  "git_blob_sha1": "2008402b8a1299cf118ea38e02116bfcc72e53c3",
+  "origin": "Upstream license at the published crate's .cargo_vcs_info commit; absent from published crate archive. Retained verbatim."
+}

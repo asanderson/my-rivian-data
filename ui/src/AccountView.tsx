@@ -3,26 +3,34 @@ import type { FormEvent } from 'react';
 import { ApiError, readAccountStatus, request } from './api';
 import type { AccountStatus } from './api';
 import { Icon } from './Icon';
+import { readVaultStatus, vaultMessage } from './account-data';
+import type { VaultStatus } from './account-data';
 
 export function AccountView({ account, onChanged, onSessionExpired }: {
   account: AccountStatus; onChanged: (status: AccountStatus) => Promise<void>; onSessionExpired: () => void;
 }) {
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState('');
+  const [notice, setNotice] = useState('');
+  const [vault, setVault] = useState<VaultStatus | null>(null);
   const form = useRef<HTMLFormElement>(null);
   const mounted = useRef(true);
-  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  useEffect(() => {
+    mounted.current = true;
+    void request('/api/account/vault').then(value => { if (mounted.current) setVault(readVaultStatus(value)); }).catch(() => { /* Memory-only sign-in remains available. */ });
+    return () => { mounted.current = false; };
+  }, []);
   const mfa = account.state === 'mfa_required';
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (busy) return;
     const values = new FormData(event.currentTarget);
     const body = mfa ? { code: String(values.get('code') ?? '').trim() }
-      : { email: String(values.get('email') ?? '').trim(), password: String(values.get('password') ?? '') };
+      : { email: String(values.get('email') ?? '').trim(), password: String(values.get('password') ?? ''), remember: values.get('remember') === 'on' && vault?.available === true };
     // Clear sensitive DOM inputs immediately; neither credentials nor OTP enter React state or storage.
     const sensitive = form.current?.elements.namedItem(mfa ? 'code' : 'password') as HTMLInputElement | null;
     if (sensitive) sensitive.value = '';
-    setBusy(true); setProblem('');
+    setBusy(true); setProblem(''); setNotice('');
     try {
       const status = readAccountStatus(await request('/api/account/' + (mfa ? 'otp' : 'login'), body));
       if (!mounted.current) return;
@@ -35,10 +43,23 @@ export function AccountView({ account, onChanged, onSessionExpired }: {
       else setProblem(error instanceof Error ? error.message : 'Sign-in could not be completed. Please try again.');
     } finally { if (mounted.current) setBusy(false); }
   }
+  async function resend() {
+    if (busy) return;
+    setBusy(true); setProblem(''); setNotice('');
+    try {
+      const status = readAccountStatus(await request('/api/account/otp/resend', {}));
+      if (mounted.current) { if (status.state !== account.state) await onChanged(status); if (mounted.current) setNotice('Rivian was asked to send another verification code.'); }
+    } catch (error) {
+      if (!mounted.current) return;
+      if (error instanceof ApiError && error.code === 'mfa_expired') await onChanged({ state: 'signed_out' });
+      else if (error instanceof ApiError && ['session_required', 'unauthorized'].includes(error.code)) onSessionExpired();
+      else setProblem(error instanceof Error ? error.message : 'A new code could not be requested.');
+    } finally { if (mounted.current) setBusy(false); }
+  }
   async function startOver() {
     if (busy) return;
     setBusy(true); setProblem('');
-    try { await request('/api/account/logout', {}); if (mounted.current) await onChanged({ state: 'signed_out' }); }
+    try { const status = readAccountStatus(await request('/api/account/logout', {})); if (mounted.current) await onChanged(status); }
     catch (error) { if (mounted.current) setProblem(error instanceof Error ? error.message : 'Please relaunch the app.'); }
     finally { if (mounted.current) setBusy(false); }
   }
@@ -51,11 +72,14 @@ export function AccountView({ account, onChanged, onSessionExpired }: {
       {mfa ? <label>Verification code<input name="code" type="text" inputMode="numeric" autoComplete="one-time-code" autoFocus required minLength={6} maxLength={8} pattern="[0-9]{6,8}" disabled={busy} /></label> : <>
         <label>Email address<input name="email" type="email" autoComplete="username" required maxLength={254} disabled={busy} /></label>
         <label>Password<input name="password" type="password" autoComplete="current-password" required maxLength={1024} disabled={busy} /></label>
+        <label className="account-remember"><input name="remember" type="checkbox" disabled={busy || !vault?.available} />Remember sign-in on this device</label>
+        <p className="account-storage" role="status">{vault ? vaultMessage(vault) : 'Protected credential storage is being checked. You can sign in for this session.'}</p>
       </>}
       {problem && <p className="error-message" role="alert">{problem}</p>}
+      {notice && <p role="status">{notice}</p>}
       <button className="button button-primary" disabled={busy} type="submit">{busy ? 'Connecting…' : mfa ? 'Verify and continue' : 'Sign in'}</button>
-      {mfa && <button className="button button-secondary" disabled={busy} type="button" onClick={() => void startOver()}>Use a different account</button>}
+      {mfa && <><button className="button button-secondary" disabled={busy} type="button" onClick={() => void resend()}>Resend verification code</button><button className="button button-secondary" disabled={busy} type="button" onClick={() => void startOver()}>Use a different account</button></>}
     </form>
-    <p className="muted">Your password is sent through the app on this device to Rivian over an encrypted connection. The app does not save it. Disconnecting or stopping the app clears your sign-in. You may need to sign in again after inactivity or when Rivian expires your session. This is an independent, unofficial project.</p>
+    <p className="muted">Your password is sent through the app on this device to Rivian over an encrypted connection. The app does not save it. Remembering saves a reusable sign-in only in your device’s protected credential store. Disconnecting removes that saved sign-in; closing the app clears memory. You may need to sign in again when Rivian expires your session. This is an independent, unofficial project.</p>
   </section>;
 }

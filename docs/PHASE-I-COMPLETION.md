@@ -1,0 +1,45 @@
+# Phase I completion ledger
+
+Source baseline: `563eac3080ad42066be9ae3f1cfb3ba20e11dfb3` (merged PR #5).
+Authorization: the original approved October 7 plan, version 4, and October 14 instruction to finish Phase I.
+Design and task details are under `docs/superpowers/`.
+
+## Decisions
+
+- Ruling: preserve the approved architecture and proceed without repeating design approval — the owner explicitly instructed execution of the existing Phase I plan.
+- Ruling: enrollment-dependent physical commands remain cataloged and blocked until desktop enrollment is proven — this is the original plan's stated boundary, not a reduction introduced by implementation.
+- Ruling: opt-in OS protected credential storage supersedes the earlier memory-only milestone rule; memory-only remains default and plaintext fallback remains prohibited.
+- Ruling: separate implementation work by file ownership, using the available scoped-agent capacity; root integrates native authority and runs full verification.
+
+- Ruling: tire validity uses documented proto3 control default zero (valid); physical readings still require wire presence — independent reviewer confirmed pinned schema and withdrew the generic missing-tag concern.
+
+## Implementation and review status
+
+- [x] Clean baseline verified on untouched main: release build, strict checks, 51 Rust tests, 28 UI tests, 37 native/WASM parity fixtures.
+- [x] Portable current-schema Parallax decoding and partial-state merge.
+- [x] Native authenticated stream lifecycle and owner/developer integration.
+- [x] Comprehensive versioned known-operation inventory and guarded writes.
+- [x] Protected remembered sessions and bounded MFA lifecycle.
+- [x] Desktop installers, SBOM, signing/rollback pipeline and acceptance tools.
+- [ ] Resource measurements and exact workload evidence.
+- [ ] Source/security review findings fixed and verification complete.
+- [ ] Completion PR published.
+
+## Review findings and evidence
+
+Independent-context same-provider review identified account-generation races during delayed request bodies, remembered-store I/O, invalidation and confirmed mutation dispatch; all are bound to the original admission/ticket epoch, with compare-and-swap transitions and post-lock checks. Native telemetry retains its authentication-failure source epoch internally, drops stale snapshots, rejects unrequested topics before retention, and guards delayed stream stop/start against newer account workers. Browser merges compare per-field source ages. Persistence deletion failures remain visible without restoring prior data. Intrinsic MFA expiry and finite retries/resends are enforced. Reproductions failed before the fixes and passed after them.
+
+The October 14 advisory scan found four Rustls advisories affecting the initial 0.23.45 lock. The lock was updated to patched 0.23.46; the repeated scan reported zero vulnerabilities and warnings, with no ignore exceptions. npm reported zero vulnerabilities. Exact database/lock digests and results are in [advisory evidence](evidence/2026-10-14/advisory-scans.json). These results describe the scanned snapshot only.
+
+Ruling: the branch-completion skill menu does not require a new integration decision. The owner already authorized GitHub pull requests in this session; publish the reviewed branch against `main`, preserve the worktree, and do not merge or publish a release.
+
+## External release acceptance
+
+- [ ] Owner-run real Rivian authentication/read validation and representative vehicle/firmware matrix.
+- [ ] Legitimate desktop key enrollment and physical-command completion evidence, where supported.
+- [ ] Actual platform signing/notarization using authorized owner-provided certificates.
+- [ ] Clean-machine installer/update/uninstall acceptance on the supported desktop matrix.
+- [ ] Independent-provider adversarial review and re-review of frozen commits.
+- [ ] Owner release decision after evidence and residual-risk disposition.
+
+These gates cannot be satisfied by mock tests, installer source files, CI builds or same-provider agent review alone.

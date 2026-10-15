@@ -1,0 +1,83 @@
+{
+  "provenance": {
+    "kind": "synthetic-documented-wire",
+    "reviewed_at": "2026-10-14",
+    "source_revision": "7d6028233752cc226faeae35e9d12ce387abb2fe",
+    "source_base_url": "https://github.com/bretterer/rivian-python-client/tree/7d6028233752cc226faeae35e9d12ce387abb2fe/src/rivian/parallax/proto",
+    "notice": "Original synthetic data. Payloads encode documented wire tags; no account data or source code copied. Missing proto3 scalar tags deliberately remain unavailable."
+  },
+  "messages": [
+    {
+      "rvm": "energy.high_voltage.battery_state",
+      "payload": "ChIJAAAAAADASkARAAAAAAAAVkA=",
+      "timestamp": 1791979200000
+    },
+    {
+      "rvm": "dynamics.vehicle.range",
+      "payload": "CLsC",
+      "timestamp": 1791979201000
+    },
+    {
+      "rvm": "dynamics.vehicle.odometer",
+      "payload": "CPTIAg==",
+      "timestamp": 1791979202000
+    },
+    {
+      "rvm": "dynamics.vehicle.gnss",
+      "payload": "CZqZmZmZmUdAETMzMzMzk17ANQAAgEA=",
+      "timestamp": 1791979203000
+    },
+    {
+      "rvm": "body.locks.states",
+      "payload": "CgQIARABCgQIAhABCgQIAxABCgQIBBAB",
+      "timestamp": 1791979204000
+    },
+    {
+      "rvm": "comfort.cabin.cabin_temperatures",
+      "payload": "HQAArEE=",
+      "timestamp": 1791979205000
+    },
+    {
+      "rvm": "dynamics.tires.state",
+      "payload": "Eg0IARABGQAAAAAAAAhAEg0IAhABGTMzMzMzMwdA",
+      "timestamp": 1791979206000
+    },
+    {
+      "rvm": "charging.session.status",
+      "payload": "CAIQAw==",
+      "timestamp": 1791979207000
+    },
+    {
+      "rvm": "charging.session.soc_slider",
+      "payload": "CFU=",
+      "timestamp": 1791979208000
+    },
+    {
+      "rvm": "charging.session.power",
+      "payload": "DQAAOEE=",
+      "timestamp": 1791979209000
+    },
+    {
+      "rvm": "charging.session.time_estimation",
+      "payload": "CAEQLQ==",
+      "timestamp": 1791979210000
+    }
+  ],
+  "expected": {
+    "battery_percent": 53.5,
+    "pack_energy_kwh": 88.0,
+    "estimated_range_km": 315.0,
+    "odometer_km": 42100.0,
+    "location": {
+      "latitude": 47.2,
+      "longitude": -122.3,
+      "accuracy_m": 4.0
+    },
+    "locked": true,
+    "temperature_celsius": 21.5,
+    "charging_state": "charging",
+    "limit_percent": 85.0,
+    "power_kw": 11.5,
+    "time_remaining_minutes": 45.0
+  }
+}

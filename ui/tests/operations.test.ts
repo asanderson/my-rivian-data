@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
-import { runDemoQuery, runQuery } from '../src/operations.ts';
+import { executeCommand, readPreparedCommand, runDemoQuery, runQuery } from '../src/operations.ts';
 import type { WasmModule } from '../src/domain.ts';
 
 Object.defineProperty(globalThis, 'window', { value: globalThis, configurable: true });
@@ -56,4 +56,18 @@ test('missing live validator never falls back to permissive demo validation', as
   globalThis.fetch = async () => { calls++; return new Response('{}'); };
   await assert.rejects(runQuery(wasm, 'charging-status', {}, 'live'), /validator did not load/);
   assert.equal(calls, 0);
+});
+
+test('write confirmation requires exact requested changes and a short native expiry', () => {
+  const variables = { vehicle_id: 'live-vehicle', name: 'Trail truck' };
+  const reply = { confirmation_id: 'confirmation_id_for_test_001', operation_id: 'rename-vehicle', variables: { name: 'Trail truck', vehicle_id: 'live-vehicle' }, expires_in_seconds: 120 };
+  assert.equal(readPreparedCommand(reply, 'rename-vehicle', variables, 0).expiresAt, 120000);
+  for (const bad of [{ ...reply, operation_id: 'unlock-vehicle' }, { ...reply, variables: { ...variables, name: 'Different' } }, { ...reply, expires_in_seconds: 1000 }, { ...reply, confirmation_id: 'short' }]) assert.throws(() => readPreparedCommand(bad, 'rename-vehicle', variables));
+});
+test('expired confirmations never dispatch and failed command execution is not retried', async () => {
+  let calls = 0;
+  globalThis.fetch = async () => { calls++; return new Response(JSON.stringify({ error: { code: 'upstream_unavailable', message: 'Check the vehicle before trying another change.' } }), { status: 502 }); };
+  const prepared = { confirmation_id: 'confirmation_id_for_test_001', operation_id: 'rename-vehicle', variables: { vehicle_id: 'live-vehicle', name: 'Trail truck' }, expiresAt: 0 };
+  await assert.rejects(executeCommand(prepared), /expired/); assert.equal(calls, 0);
+  await assert.rejects(executeCommand({ ...prepared, expiresAt: Date.now() + 120000 }), /Check the vehicle/); assert.equal(calls, 1);
 });

@@ -13,8 +13,18 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        include:
+          - os: ubuntu-22.04
+            architecture: x64
+          - os: windows-2025
+            architecture: x64
+          - os: macos-15-intel
+            architecture: x64
+          - os: macos-15
+            architecture: arm64
     runs-on: ${{ matrix.os }}
+    env:
+      MACOSX_DEPLOYMENT_TARGET: '13.0'
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -35,8 +45,18 @@ jobs:
       - name: Browser smoke test
         if: runner.os == 'Linux'
         run: npm run test:browser --prefix ui
+      - name: Install Linux native packaging tools
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y rpm desktop-file-utils
+      - name: Install pinned NSIS compiler
+        if: runner.os == 'Windows'
+        run: choco install nsis --version=3.12 -y --no-progress
       - name: Package executable, documentation, notices and corresponding source
         run: node scripts/package.mjs
+      - name: Check archive integrity and native package lifecycle
+        run: node scripts/check-packages.mjs
+      - name: Synthetic backend benchmark
+        run: node scripts/benchmark.mjs --demo --duration-seconds 10 --concurrency 2
       - name: Upload unsigned application package
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -44,5 +64,12 @@ jobs:
           path: |
             dist/*.tar.gz
             dist/*.sha256
+            dist/*.exe
+            dist/*.dmg
+            dist/*.deb
+            dist/*.rpm
+            dist/*.json
+            dist/*.SHA256SUMS
+            artifacts/benchmarks/**
           if-no-files-found: error
           retention-days: 7

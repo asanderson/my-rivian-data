@@ -1,20 +1,281 @@
 {
   "schema_version": 1,
   "cases": [
-    {"name":"live-account","operation_id":"account-summary","variables_json":"{}","expected_valid":true},
-    {"name":"live-real-vehicle-id","operation_id":"vehicle-state","variables_json":"{\"vehicle_id\":\"b18f756c-e420-47fa-856f-b2d4de906f6e\"}","expected_valid":true},
-    {"name":"live-history-limit","operation_id":"charging-history","variables_json":"{\"vehicle_id\":\"vehicle-1\",\"limit\":100}","expected_valid":true},
-    {"name":"live-no-browser-query","operation_id":"vehicle-state","variables_json":"{\"vehicle_id\":\"vehicle-1\",\"query\":\"mutation Test\"}","expected_valid":false},
-    {"name":"live-no-browser-url","operation_id":"vehicle-state","variables_json":"{\"vehicle_id\":\"vehicle-1\",\"url\":\"https://example.com\"}","expected_valid":false},
-    {"name":"live-id-required","operation_id":"vehicle-state","variables_json":"{}","expected_valid":false},
-    {"name":"live-id-no-path","operation_id":"vehicle-state","variables_json":"{\"vehicle_id\":\"../vehicle\"}","expected_valid":false},
-    {"name":"live-id-no-whitespace","operation_id":"vehicle-state","variables_json":"{\"vehicle_id\":\"vehicle 1\"}","expected_valid":false},
-    {"name":"live-limit-bounded","operation_id":"charging-history","variables_json":"{\"vehicle_id\":\"vehicle-1\",\"limit\":101}","expected_valid":false},
-    {"name":"live-unlock-blocked","operation_id":"unlock-vehicle","variables_json":"{\"vehicle_id\":\"vehicle-1\"}","expected_valid":false},
-    {"name":"live-stream-blocked","operation_id":"telemetry-subscription","variables_json":"{\"vehicle_id\":\"vehicle-1\"}","expected_valid":false},
-    {"name":"live-no-arbitrary-operation","operation_id":"deleteAccount","variables_json":"{}","expected_valid":false},
-    {"name":"live-no-array","operation_id":"account-summary","variables_json":"[]","expected_valid":false},
-    {"name":"live-no-token-variables","operation_id":"account-summary","variables_json":"{\"u-sess\":\"secret\"}","expected_valid":false},
-    {"name":"live-invalid-json","operation_id":"account-summary","variables_json":"{","expected_valid":false}
+    {
+      "name": "live-account",
+      "operation_id": "account-summary",
+      "variables_json": "{}",
+      "expected_valid": true
+    },
+    {
+      "name": "live-real-vehicle-id",
+      "operation_id": "vehicle-state",
+      "variables_json": "{\"vehicle_id\":\"b18f756c-e420-47fa-856f-b2d4de906f6e\"}",
+      "expected_valid": true
+    },
+    {
+      "name": "live-history-limit",
+      "operation_id": "charging-history",
+      "variables_json": "{\"vehicle_id\":\"vehicle-1\",\"limit\":100}",
+      "expected_valid": true
+    },
+    {
+      "name": "live-no-browser-query",
+      "operation_id": "vehicle-state",
+      "variables_json": "{\"vehicle_id\":\"vehicle-1\",\"query\":\"mutation Test\"}",
+      "expected_valid": false
+    },
+    {
+      "name": "live-no-browser-url",
+      "operation_id": "vehicle-state",
+      "variables_json": "{\"vehicle_id\":\"vehicle-1\",\"url\":\"https://example.com\"}",
+      "expected_valid": false
+    },
+    {
+      "name": "live-id-required",
+      "operation_id": "vehicle-state",
+      "variables_json": "{}",
+      "expected_valid": false
+    },
+    {
+      "name": "live-id-no-path",
+      "operation_id": "vehicle-state",
+      "variables_json": "{\"vehicle_id\":\"../vehicle\"}",
+      "expected_valid": false
+    },
+    {
+      "name": "live-id-no-whitespace",
+      "operation_id": "vehicle-state",
+      "variables_json": "{\"vehicle_id\":\"vehicle 1\"}",
+      "expected_valid": false
+    },
+    {
+      "name": "live-limit-bounded",
+      "operation_id": "charging-history",
+      "variables_json": "{\"vehicle_id\":\"vehicle-1\",\"limit\":101}",
+      "expected_valid": false
+    },
+    {
+      "name": "live-unlock-blocked",
+      "operation_id": "unlock-vehicle",
+      "variables_json": "{\"vehicle_id\":\"vehicle-1\"}",
+      "expected_valid": false
+    },
+    {
+      "name": "live-stream-blocked",
+      "operation_id": "telemetry-subscription",
+      "variables_json": "{\"vehicle_id\":\"vehicle-1\"}",
+      "expected_valid": false
+    },
+    {
+      "name": "live-no-arbitrary-operation",
+      "operation_id": "deleteAccount",
+      "variables_json": "{}",
+      "expected_valid": false
+    },
+    {
+      "name": "live-no-array",
+      "operation_id": "account-summary",
+      "variables_json": "[]",
+      "expected_valid": false
+    },
+    {
+      "name": "live-no-token-variables",
+      "operation_id": "account-summary",
+      "variables_json": "{\"u-sess\":\"secret\"}",
+      "expected_valid": false
+    },
+    {
+      "name": "live-invalid-json",
+      "operation_id": "account-summary",
+      "variables_json": "{",
+      "expected_valid": false
+    },
+    {
+      "name": "current-user-empty",
+      "operation_id": "current-user",
+      "variables_json": "{}",
+      "expected_valid": true
+    },
+    {
+      "name": "payment-method-summary-no-input",
+      "operation_id": "payment-methods",
+      "variables_json": "{}",
+      "expected_valid": true
+    },
+    {
+      "name": "driver-pin-status-no-secrets",
+      "operation_id": "user-pin-exists",
+      "variables_json": "{}",
+      "expected_valid": true
+    },
+    {
+      "name": "profile-pin-setting-no-secrets",
+      "operation_id": "user-pin-settings",
+      "variables_json": "{}",
+      "expected_valid": true
+    },
+    {
+      "name": "camp-speaker-account-list",
+      "operation_id": "camp-speakers",
+      "variables_json": "{}",
+      "expected_valid": true
+    },
+    {
+      "name": "account-vehicle-names",
+      "operation_id": "vehicle-names",
+      "variables_json": "{}",
+      "expected_valid": true
+    },
+    {
+      "name": "linked-account-status",
+      "operation_id": "linked-charging-account",
+      "variables_json": "{}",
+      "expected_valid": true
+    },
+    {
+      "name": "linked-account-email",
+      "operation_id": "linked-charging-email",
+      "variables_json": "{}",
+      "expected_valid": true
+    },
+    {
+      "name": "non-rivian-session-account-scope",
+      "operation_id": "non-rivian-charging-session",
+      "variables_json": "{}",
+      "expected_valid": true
+    },
+    {
+      "name": "delivery-order-id",
+      "operation_id": "delivery-status",
+      "variables_json": "{\"order_id\":\"order-1\"}",
+      "expected_valid": true
+    },
+    {
+      "name": "delivery-order-id-required",
+      "operation_id": "delivery-status",
+      "variables_json": "{}",
+      "expected_valid": false
+    },
+    {
+      "name": "finance-order-id",
+      "operation_id": "finance-summary",
+      "variables_json": "{\"order_id\":\"order-1\"}",
+      "expected_valid": true
+    },
+    {
+      "name": "transaction-order-id",
+      "operation_id": "transaction-status",
+      "variables_json": "{\"order_id\":\"order-1\"}",
+      "expected_valid": true
+    },
+    {
+      "name": "order-id-not-url",
+      "operation_id": "order-details",
+      "variables_json": "{\"order_id\":\"https://example.com\"}",
+      "expected_valid": false
+    },
+    {
+      "name": "order-details-fixed-fields",
+      "operation_id": "order-details",
+      "variables_json": "{\"order_id\":\"order-1\"}",
+      "expected_valid": true
+    },
+    {
+      "name": "wallbox-registered-id-syntax",
+      "operation_id": "wallbox-status",
+      "variables_json": "{\"wallbox_id\":\"wallbox-1\"}",
+      "expected_valid": true
+    },
+    {
+      "name": "wallbox-id-required",
+      "operation_id": "wallbox-status",
+      "variables_json": "{}",
+      "expected_valid": false
+    },
+    {
+      "name": "charging-map-zero-coordinates",
+      "operation_id": "charging-sites",
+      "variables_json": "{\"latitude\":0,\"longitude\":0,\"connector_type\":\"CCS\"}",
+      "expected_valid": true
+    },
+    {
+      "name": "charging-map-bounded-results",
+      "operation_id": "charging-sites",
+      "variables_json": "{\"latitude\":-90,\"longitude\":180,\"connector_type\":\"NACS\",\"max_results\":100}",
+      "expected_valid": true
+    },
+    {
+      "name": "charging-map-invalid-latitude",
+      "operation_id": "charging-sites",
+      "variables_json": "{\"latitude\":91,\"longitude\":0,\"connector_type\":\"CCS\"}",
+      "expected_valid": false
+    },
+    {
+      "name": "charging-map-invalid-connector",
+      "operation_id": "charging-sites",
+      "variables_json": "{\"latitude\":0,\"longitude\":0,\"connector_type\":\"any\"}",
+      "expected_valid": false
+    },
+    {
+      "name": "charging-map-results-over-limit",
+      "operation_id": "charging-sites",
+      "variables_json": "{\"latitude\":0,\"longitude\":0,\"connector_type\":\"CCS\",\"max_results\":101}",
+      "expected_valid": false
+    },
+    {
+      "name": "charging-map-no-arbitrary-filter",
+      "operation_id": "charging-sites",
+      "variables_json": "{\"latitude\":0,\"longitude\":0,\"connector_type\":\"CCS\",\"filter\":{}}",
+      "expected_valid": false
+    },
+    {
+      "name": "rename-fixed-variables",
+      "operation_id": "rename-vehicle",
+      "variables_json": "{\"vehicle_id\":\"vehicle-1\",\"name\":\"Trail vehicle\"}",
+      "expected_valid": true
+    },
+    {
+      "name": "rename-empty-name",
+      "operation_id": "rename-vehicle",
+      "variables_json": "{\"vehicle_id\":\"vehicle-1\",\"name\":\" \"}",
+      "expected_valid": false
+    },
+    {
+      "name": "rename-control-character",
+      "operation_id": "rename-vehicle",
+      "variables_json": "{\"vehicle_id\":\"vehicle-1\",\"name\":\"Bad\\nname\"}",
+      "expected_valid": false
+    },
+    {
+      "name": "rename-length-bound",
+      "operation_id": "rename-vehicle",
+      "variables_json": "{\"vehicle_id\":\"vehicle-1\",\"name\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}",
+      "expected_valid": false
+    },
+    {
+      "name": "rename-browser-confirmation-rejected",
+      "operation_id": "rename-vehicle",
+      "variables_json": "{\"vehicle_id\":\"vehicle-1\",\"name\":\"Valid\",\"confirmed\":true}",
+      "expected_valid": false
+    },
+    {
+      "name": "known-auth-document-cannot-execute",
+      "operation_id": "document-login",
+      "variables_json": "{}",
+      "expected_valid": false
+    },
+    {
+      "name": "known-key-enrollment-cannot-execute",
+      "operation_id": "document-enrollphone",
+      "variables_json": "{}",
+      "expected_valid": false
+    },
+    {
+      "name": "known-command-cannot-execute",
+      "operation_id": "command-wake-vehicle",
+      "variables_json": "{}",
+      "expected_valid": false
+    }
   ]
 }
