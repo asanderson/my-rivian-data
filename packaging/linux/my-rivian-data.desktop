@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=My Rivian Data
+Comment=Your vehicles. Your data.
+Exec=/usr/bin/my-rivian-data
+Terminal=true
+Categories=Utility;
+StartupNotify=false

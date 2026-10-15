@@ -8,7 +8,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use thiserror::Error;
 
+pub mod inventory;
 pub mod live;
+pub mod parallax;
 
 pub const MAX_VARIABLE_BYTES: usize = 16 * 1024;
 pub const MAX_VARIABLE_DEPTH: usize = 8;

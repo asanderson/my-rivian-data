@@ -1,3 +1,6 @@
+import { readVaultStatus } from './account-data.ts';
+import type { VaultStatus } from './account-data.ts';
+
 export interface ApiResponse<T> {
   body: T;
   rawBody: string;
@@ -55,7 +58,7 @@ async function boundedBody(response: Response): Promise<string> {
   return new TextDecoder().decode(merged);
 }
 
-async function performRequest<T>(path: string, body: unknown, includeErrorResponse: boolean): Promise<ApiResponse<T>> {
+async function performRequest<T>(path: string, body: unknown, includeErrorResponse: boolean, signal?: AbortSignal): Promise<ApiResponse<T>> {
   const controller = new AbortController();
   const timer = window.setTimeout(() => controller.abort(), 45_000);
   const started = performance.now();
@@ -65,7 +68,7 @@ async function performRequest<T>(path: string, body: unknown, includeErrorRespon
       credentials: 'same-origin',
       cache: 'no-store',
       redirect: 'error',
-      signal: controller.signal,
+      signal: signal ? AbortSignal.any([controller.signal, signal]) : controller.signal,
       headers: {
         ...(appCapability ? { 'X-App-Capability': appCapability } : {}),
         ...(body === undefined ? {} : { 'Content-Type': 'application/json', ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {}) }),
@@ -92,8 +95,8 @@ async function performRequest<T>(path: string, body: unknown, includeErrorRespon
 }
 
 /** Normal application requests do not retain raw error bodies. */
-export async function request<T>(path: string, body?: unknown): Promise<T> {
-  return (await performRequest<T>(path, body, false)).body;
+export async function request<T>(path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
+  return (await performRequest<T>(path, body, false, signal)).body;
 }
 
 /** Developer inspection of an explicitly requested local response; never includes headers. */
@@ -123,13 +126,20 @@ export async function startSession(bootstrapToken: string | null): Promise<Local
   } catch (error) { clearSession(); throw error; }
 }
 
-export interface AccountStatus { state: 'signed_out' | 'mfa_required' | 'authenticated'; channel?: string }
+export interface AccountStatus { state: 'signed_out' | 'mfa_required' | 'authenticated'; channel?: string; vault?: VaultStatus; remembered_session_removed?: boolean; remember_problem?: boolean }
 export function readAccountStatus(value: unknown): AccountStatus {
   if (!value || typeof value !== 'object' || !('state' in value) ||
       !['signed_out', 'mfa_required', 'authenticated'].includes(String(value.state))) {
     throw new Error('The account connection returned an unexpected response. Please try again.');
   }
-  return value as AccountStatus;
+  const row = value as Record<string, unknown>;
+  if (row.channel !== undefined && row.channel !== null && (typeof row.channel !== 'string' || row.channel.length > 256) ||
+      row.remembered_session_removed !== undefined && typeof row.remembered_session_removed !== 'boolean' ||
+      row.remember_problem !== undefined && typeof row.remember_problem !== 'boolean') throw new Error('The account connection returned an unexpected response. Please try again.');
+  return { state: row.state as AccountStatus['state'], ...(typeof row.channel === 'string' ? { channel: row.channel } : {}),
+    ...(row.vault !== undefined ? { vault: readVaultStatus(row.vault) } : {}),
+    ...(row.remembered_session_removed !== undefined ? { remembered_session_removed: row.remembered_session_removed as boolean } : {}),
+    ...(row.remember_problem !== undefined ? { remember_problem: row.remember_problem as boolean } : {}) };
 }
 
 export function accountExpired(error: unknown): boolean {

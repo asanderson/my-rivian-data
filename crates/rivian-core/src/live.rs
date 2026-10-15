@@ -1,7 +1,9 @@
 //! Reviewed, fixed GraphQL documents. This module has no network or token access.
 //!
-//! Contracts were checked against RivDocs and rivian-python-client commit
-//! 4d15dd88e74cf1a0be0bd23f46565fe89b48af44 on 2026-10-09. These are unofficial
+//! Inherited read contracts were checked against RivDocs and Python client commit
+//! 4d15dd88e74cf1a0be0bd23f46565fe89b48af44 on 2026-10-09. The expanded source
+//! inventory and additional fixed operations were reviewed on 2026-10-14 against
+//! pinned RivDocs and Python commits recorded in `inventory`. These are unofficial
 //! contracts, not a claim that all Rivian operations or vehicles are supported.
 //! Native transport must separately check that each requested vehicle belongs to
 //! the authenticated account. Browser validation cannot grant that authority.
@@ -25,6 +27,7 @@ pub enum LiveEndpoint {
     Gateway,
     Charging,
     Orders,
+    Payments,
 }
 
 impl LiveEndpoint {
@@ -34,6 +37,7 @@ impl LiveEndpoint {
             Self::Gateway => "https://rivian.com/api/gql/gateway/graphql",
             Self::Charging => "https://rivian.com/api/gql/chrg/user/graphql",
             Self::Orders => "https://rivian.com/api/gql/orders/graphql",
+            Self::Payments => "https://rivian.com/api/gql/t2d/graphql",
         }
     }
 }
@@ -212,6 +216,134 @@ pub fn catalog() -> Vec<Operation> {
             "Read account order summaries including state, totals and vehicle association.",
             "https://github.com/bretterer/rivian-python-client/blob/4d15dd88e74cf1a0be0bd23f46565fe89b48af44/src/rivian/schemas/orders.graphql",
         ),
+        (
+            "current-user",
+            "Profile and preferences",
+            "Account",
+            false,
+            "Read your contact details, units and location-sharing preferences.",
+            "https://rivian-api.kaedenb.org/app/account/current-user/",
+        ),
+        (
+            "payment-methods",
+            "Payment method summaries",
+            "Account",
+            false,
+            "Read payment method type, brand and last four digits. No full card number is requested.",
+            "https://rivian-api.kaedenb.org/app/account/payment-methods/",
+        ),
+        (
+            "camp-speakers",
+            "Your camp speakers",
+            "Vehicles",
+            false,
+            "Read camp speakers provisioned to account vehicles.",
+            "https://rivian-api.kaedenb.org/app/account/provisioned-camp-speakers/",
+        ),
+        (
+            "vehicle-names",
+            "Vehicle names",
+            "Vehicles",
+            false,
+            "Read custom vehicle names for your account.",
+            "https://rivian-api.kaedenb.org/app/legacy/vehicle-info/vehicle-names/",
+        ),
+        (
+            "user-pin-settings",
+            "Driver profile lock settings",
+            "Account",
+            false,
+            "Read whether the driver profile requires a PIN. This does not retrieve or change the PIN.",
+            "https://rivian-api.kaedenb.org/app/account/user-pin/",
+        ),
+        (
+            "user-pin-exists",
+            "Driver profile PIN status",
+            "Account",
+            false,
+            "Read whether a driver profile PIN has been configured. The PIN itself is never requested.",
+            "https://rivian-api.kaedenb.org/app/account/user-pin/",
+        ),
+        (
+            "linked-charging-account",
+            "Linked charging account",
+            "Charging",
+            false,
+            "Read whether a ChargePoint account is linked to your Rivian account.",
+            "https://rivian-api.kaedenb.org/app/legacy/charging/check-by-rivian-id/",
+        ),
+        (
+            "linked-charging-email",
+            "Linked charging email",
+            "Charging",
+            false,
+            "Read the email for your linked ChargePoint account.",
+            "https://rivian-api.kaedenb.org/app/legacy/charging/get-linked-email-for-rivian-id/",
+        ),
+        (
+            "non-rivian-charging-session",
+            "Other vehicle charging session",
+            "Charging",
+            false,
+            "Read current charging session information returned for the signed-in account. No vehicle association is inferred.",
+            "https://rivian-api.kaedenb.org/app/legacy/charging/get-non-rivian-user-session/",
+        ),
+        (
+            "delivery-status",
+            "Delivery details",
+            "Account",
+            false,
+            "Read delivery status, address and appointment for a natively verified account order.",
+            "https://rivian-api.kaedenb.org/app/account/deliveries/",
+        ),
+        (
+            "finance-summary",
+            "Financing summary",
+            "Account",
+            false,
+            "Read financing information for a natively verified account order. No financing choice is changed.",
+            "https://rivian-api.kaedenb.org/app/account/finance-summary/",
+        ),
+        (
+            "transaction-status",
+            "Order progress",
+            "Account",
+            false,
+            "Read transaction steps for a natively verified account order.",
+            "https://rivian-api.kaedenb.org/app/account/transaction-status/",
+        ),
+        (
+            "order-details",
+            "Order details",
+            "Account",
+            false,
+            "Read fixed order totals and vehicle details after native account order authorization.",
+            "https://rivian-api.kaedenb.org/app/account/order/",
+        ),
+        (
+            "wallbox-status",
+            "Wall charger status",
+            "Charging",
+            false,
+            "Read status for a wall charger whose registration is checked natively against your account.",
+            "https://rivian-api.kaedenb.org/app/legacy/charging/wallbox-status/",
+        ),
+        (
+            "charging-sites",
+            "Public charging sites",
+            "Charging",
+            false,
+            "Search up to 100 charging sites near the coordinates you provide. These coordinates are sent to Rivian.",
+            "https://rivian-api.kaedenb.org/app/legacy/charging/charging-sites/",
+        ),
+        (
+            "rename-vehicle",
+            "Rename vehicle",
+            "Vehicles",
+            true,
+            "Change a vehicle nickname after native account ownership and a one-use confirmation. This write is never automatically retried.",
+            "https://rivian-api.kaedenb.org/app/legacy/vehicle-info/set-vehicle-name/",
+        ),
     ];
     let mut operations: Vec<Operation> = definitions
         .into_iter()
@@ -220,11 +352,19 @@ pub fn catalog() -> Vec<Operation> {
                 id: id.into(),
                 label: label.into(),
                 family: family.into(),
-                kind: "query".into(),
+                kind: if id == "rename-vehicle" { "mutation" } else { "query" }.into(),
                 status: "live".into(),
                 requires_vehicle,
                 description: description.into(),
-                example_variables: if id == "charging-history" {
+                example_variables: if id == "rename-vehicle" {
+                    json!({"vehicle_id": EXAMPLE_VEHICLE, "name": "My Rivian"})
+                } else if matches!(id, "delivery-status" | "finance-summary" | "transaction-status" | "order-details") {
+                    json!({"order_id":"select-an-order"})
+                } else if id == "wallbox-status" {
+                    json!({"wallbox_id":"select-a-wallbox"})
+                } else if id == "charging-sites" {
+                    json!({"latitude": 0, "longitude": 0, "connector_type": "CCS", "max_results": 100})
+                } else if id == "charging-history" {
                     json!({"vehicle_id": EXAMPLE_VEHICLE, "limit": 100})
                 } else if requires_vehicle {
                     json!({"vehicle_id": EXAMPLE_VEHICLE})
@@ -240,7 +380,7 @@ pub fn catalog() -> Vec<Operation> {
             "telemetry-subscription",
             "Continuous vehicle stream",
             "subscription",
-            "Unavailable: persistent Parallax subscriptions and protobuf decoding are not implemented. Use one-shot readings.",
+            "Use the protected native stream controls for eleven reviewed Parallax read topics. This subscription cannot run through the one-shot HTTP executor; real firmware compatibility remains unverified.",
         ),
         (
             "lock-vehicle",
@@ -258,7 +398,7 @@ pub fn catalog() -> Vec<Operation> {
             "set-charge-limit",
             "Set charge limit",
             "mutation",
-            "Unavailable: this read-only release does not change vehicle settings.",
+            "Unavailable: charge-limit commands require proven native enrollment and reviewed command signing authority.",
         ),
     ] {
         operations.push(Operation {
@@ -282,6 +422,7 @@ pub fn catalog() -> Vec<Operation> {
             source_url: "https://rivian-api.kaedenb.org/app/parallax/".into(),
         });
     }
+    operations.extend(crate::inventory::known_catalog());
     operations
 }
 
@@ -318,6 +459,12 @@ pub fn validate_request(operation_id: &str, variables: &Value) -> ValidationResu
     let allowed: &[&str] = match operation_id {
         "charging-history" => &["vehicle_id", "limit"],
         "set-charge-limit" => &["vehicle_id", "limit_percent"],
+        "rename-vehicle" => &["vehicle_id", "name"],
+        "delivery-status" | "finance-summary" | "transaction-status" | "order-details" => {
+            &["order_id"]
+        }
+        "wallbox-status" => &["wallbox_id"],
+        "charging-sites" => &["latitude", "longitude", "connector_type", "max_results"],
         _ if operation.requires_vehicle => &["vehicle_id"],
         _ => &[],
     };
@@ -345,7 +492,92 @@ pub fn validate_request(operation_id: &str, variables: &Value) -> ValidationResu
     }) {
         issues.push(issue("limit", "Limit must be an integer from 1 to 100"));
     }
+    if let Some(field @ ("order_id" | "wallbox_id")) = resource_id_field(operation_id)
+        && !object
+            .get(field)
+            .and_then(Value::as_str)
+            .is_some_and(valid_id)
+    {
+        issues.push(issue(field, "An account resource ID of 1 to 128 letters, digits, hyphens or underscores is required"));
+    }
+    if operation_id == "rename-vehicle"
+        && !object
+            .get("name")
+            .and_then(Value::as_str)
+            .is_some_and(|name| {
+                !name.trim().is_empty() && name.len() <= 64 && !name.chars().any(char::is_control)
+            })
+    {
+        issues.push(issue(
+            "name",
+            "Name must contain 1 to 64 UTF-8 bytes without control characters",
+        ));
+    }
+    if operation_id == "charging-sites" {
+        for (field, min, max) in [("latitude", -90.0, 90.0), ("longitude", -180.0, 180.0)] {
+            if number(&variables[field], min, max).is_none() {
+                issues.push(issue(
+                    field,
+                    "A finite coordinate within geographic bounds is required",
+                ));
+            }
+        }
+        if !matches!(variables["connector_type"].as_str(), Some("CCS" | "NACS")) {
+            issues.push(issue(
+                "connector_type",
+                "Connector type must be CCS or NACS",
+            ));
+        }
+        if object
+            .get("max_results")
+            .is_some_and(|value| !value.as_u64().is_some_and(|n| (1..=100).contains(&n)))
+        {
+            issues.push(issue(
+                "max_results",
+                "Maximum results must be an integer from 1 to 100",
+            ));
+        }
+    }
     ValidationResult::from_issues(issues)
+}
+
+/// This identifies the native authorization check; it never grants ownership.
+pub fn resource_id_field(operation_id: &str) -> Option<&'static str> {
+    match operation_id {
+        "delivery-status" | "finance-summary" | "transaction-status" | "order-details" => {
+            Some("order_id")
+        }
+        "wallbox-status" => Some("wallbox_id"),
+        _ if catalog()
+            .iter()
+            .any(|op| op.id == operation_id && op.requires_vehicle) =>
+        {
+            Some("vehicle_id")
+        }
+        _ => None,
+    }
+}
+
+pub fn requires_confirmation(operation_id: &str) -> bool {
+    operation_id == "rename-vehicle"
+}
+
+/// Admit only an exact reviewed document. Variables are validated separately and
+/// native ownership and confirmation checks still apply to the returned local ID.
+pub fn admit_document(endpoint: &str, operation_name: &str, query: &str) -> Option<String> {
+    if endpoint.len() > 128 || operation_name.len() > 128 || query.len() > MAX_VARIABLE_BYTES {
+        return None;
+    }
+    catalog()
+        .into_iter()
+        .filter(|operation| operation.status == "live")
+        .find_map(|operation| {
+            let candidate = request(&operation.id, &operation.example_variables, None).ok()?;
+            (candidate.endpoint.url() == endpoint
+                && candidate.operation_name == operation_name
+                && candidate.query == query)
+                .then_some(operation.id)
+        })
 }
 
 fn valid_id(value: &str) -> bool {
@@ -397,6 +629,29 @@ pub fn request(
         "drivers-and-keys" => (LiveEndpoint::Gateway, "DriversAndKeys", "query DriversAndKeys($vehicleId: String) { getVehicle(id: $vehicleId) { id vin invitedUsers { ... on ProvisionedUser { firstName lastName email roles userId devices { type mappedIdentityId id hrid deviceName isPaired isEnabled } } ... on UnprovisionedUser { email inviteId status } } } }".into(), json!({"vehicleId": vehicle})),
         "account-profile" => (LiveEndpoint::Orders, "MyRivianDataProfile", "query MyRivianDataProfile { user { userId firstName lastName email { email } phone { formatted } vehicles { id vin highestPriorityRole } } }".into(), json!({})),
         "vehicle-orders" => (LiveEndpoint::Orders, "MyRivianDataOrders", "query MyRivianDataOrders { user { orderSnapshots { id state orderDate type vehicleId vin total paidTotal subtotal fulfillmentSummaryStatus configurationStatus currency } } }".into(), json!({})),
+        "current-user" => reviewed_request(LiveEndpoint::Gateway, "CurrentUser", json!({}))?,
+        "payment-methods" => reviewed_request(LiveEndpoint::Orders, "paymentMethods", json!({}))?,
+        "camp-speakers" => reviewed_request(LiveEndpoint::Gateway, "GetProvisionedCampSpeakers", json!({}))?,
+        "vehicle-names" => reviewed_request(LiveEndpoint::Gateway, "VehicleNames", json!({}))?,
+        "user-pin-settings" => reviewed_request(LiveEndpoint::Gateway, "GetUserPinAuth", json!({}))?,
+        "user-pin-exists" => reviewed_request(LiveEndpoint::Gateway, "GetUserPinExists", json!({}))?,
+        "linked-charging-account" => reviewed_request(LiveEndpoint::Charging, "CheckByRivianId", json!({}))?,
+        "linked-charging-email" => reviewed_request(LiveEndpoint::Charging, "getLinkedEmailForRivianId", json!({}))?,
+        "non-rivian-charging-session" => reviewed_request(LiveEndpoint::Charging, "getNonRivianUserSession", json!({}))?,
+        "delivery-status" => reviewed_request(LiveEndpoint::Gateway, "delivery", json!({"orderId":variables["order_id"]}))?,
+        "finance-summary" => reviewed_request(LiveEndpoint::Payments, "financeSummary", json!({"orderId":variables["order_id"]}))?,
+        "transaction-status" => reviewed_request(LiveEndpoint::Payments, "transactionStatus", json!({"orderId":variables["order_id"]}))?,
+        "order-details" => (LiveEndpoint::Orders, "MyRivianDataOrderDetails", "query MyRivianDataOrderDetails($id: String!) { order(id: $id) { id vin state currency type subtotal paidTotal remainingTotal total vehicle { vehicleId vin modelYear model make } } }".into(), json!({"id":variables["order_id"]})),
+        "wallbox-status" => reviewed_request(LiveEndpoint::Charging, "getWallboxStatus", json!({"wallboxId":variables["wallbox_id"]}))?,
+        "charging-sites" => reviewed_request(LiveEndpoint::Gateway, "chargingSites", json!({"filter":{
+            "userLocation":{"latitude":variables["latitude"],"longitude":variables["longitude"]},
+            "searchLocation":{"latitude":variables["latitude"],"longitude":variables["longitude"]},
+            "networkIds":[],"connectorTypes":["J1772","CCS","NACS"],
+            "maxResults":variables.get("max_results").cloned().unwrap_or(json!(100)),
+            "hideIncompatible":false,"hideAdapterNeeded":false,"hideLowScore":false,
+            "vehicleChargePortType":variables["connector_type"],"showRestrictedSites":false
+        }}))?,
+        "rename-vehicle" => reviewed_request(LiveEndpoint::Gateway, "SetVehicleName", json!({"vehicleId":vehicle,"name":variables["name"]}))?,
         _ => return Err(CoreError::UnknownOperation),
     };
     Ok(LiveRequest {
@@ -405,6 +660,17 @@ pub fn request(
         query,
         variables: upstream_variables,
     })
+}
+
+fn reviewed_request(
+    endpoint: LiveEndpoint,
+    name: &'static str,
+    variables: Value,
+) -> Result<(LiveEndpoint, &'static str, String, Value), CoreError> {
+    // The operation-name match above is the allowlist. The immutable, versioned
+    // snapshot holds the exact reviewed document, never a caller-supplied query.
+    let query = crate::inventory::reviewed_document(name).ok_or(CoreError::UnknownOperation)?;
+    Ok((endpoint, name, query.into(), variables))
 }
 
 fn response_data(response: &Value) -> Result<&Value, NormalizeError> {
@@ -501,6 +767,23 @@ pub fn normalize(
         {
             return Err(NormalizeError::InvalidResponse);
         }
+    }
+    for (local, root, echo) in [
+        ("order-details", "order", "id"),
+        ("finance-summary", "financeSummary", "orderId"),
+        ("wallbox-status", "getWallboxStatus", "wallboxId"),
+    ] {
+        if operation_id == local {
+            let field = resource_id_field(local).ok_or(NormalizeError::InvalidResponse)?;
+            if data[root][echo].as_str() != variables[field].as_str() {
+                return Err(NormalizeError::InvalidResponse);
+            }
+        }
+    }
+    if operation_id == "rename-vehicle"
+        && data["setVehicleName"]["value"].as_str() != variables["name"].as_str()
+    {
+        return Err(NormalizeError::InvalidResponse);
     }
     match operation_id {
         "account-summary" | "list-vehicles" => {
@@ -744,6 +1027,111 @@ fn normalize_history(
 mod tests {
     use super::*;
 
+    #[test]
+    fn documented_inventory_is_visible_without_granting_execution() {
+        let entries = catalog();
+        assert!(
+            entries.len() >= 234,
+            "known source inventory must be visible"
+        );
+        for id in [
+            "document-login",
+            "document-enrollphone",
+            "command-wake-vehicle",
+        ] {
+            let operation = entries
+                .iter()
+                .find(|item| item.id == id)
+                .expect("known operation");
+            assert_ne!(operation.status, "live");
+            assert!(request(id, &json!({}), None).is_err());
+        }
+    }
+
+    #[test]
+    fn reviewed_resource_reads_use_fixed_documents_and_strict_inputs() {
+        for (id, input, upstream_key) in [
+            ("delivery-status", json!({"order_id":"order-1"}), "orderId"),
+            ("finance-summary", json!({"order_id":"order-1"}), "orderId"),
+            (
+                "transaction-status",
+                json!({"order_id":"order-1"}),
+                "orderId",
+            ),
+            ("order-details", json!({"order_id":"order-1"}), "id"),
+            (
+                "wallbox-status",
+                json!({"wallbox_id":"wallbox-1"}),
+                "wallboxId",
+            ),
+        ] {
+            let request = request(id, &input, None).expect("reviewed resource read");
+            assert_eq!(
+                request.variables[upstream_key],
+                input.as_object().unwrap().values().next().unwrap().clone()
+            );
+            assert!(!request.query.contains("order-1") && !request.query.contains("wallbox-1"));
+            let mut invalid = input.clone();
+            invalid
+                .as_object_mut()
+                .unwrap()
+                .insert("url".into(), json!("https://example.com"));
+            assert!(!validate_request(id, &invalid).valid);
+        }
+        assert!(!validate_request("delivery-status", &json!({"order_id":"../other"})).valid);
+        assert!(!validate_request("wallbox-status", &json!({"wallbox_id":""})).valid);
+    }
+
+    #[test]
+    fn reviewed_rename_document_bounds_name_and_preserves_variable_binding() {
+        let input = json!({"vehicle_id":"vehicle-1","name":"Trail vehicle"});
+        let request = request("rename-vehicle", &input, None).expect("reviewed rename");
+        assert_eq!(request.operation_name, "SetVehicleName");
+        assert!(request.query.starts_with("mutation "));
+        assert_eq!(
+            request.variables,
+            json!({"vehicleId":"vehicle-1","name":"Trail vehicle"})
+        );
+        assert!(!request.query.contains("Trail vehicle"));
+        for name in ["", "   ", "invalid\nname", &"x".repeat(65)] {
+            assert!(
+                !validate_request(
+                    "rename-vehicle",
+                    &json!({"vehicle_id":"vehicle-1","name":name})
+                )
+                .valid
+            );
+        }
+        assert!(
+            !validate_request(
+                "rename-vehicle",
+                &json!({"vehicle_id":"vehicle-1","name":"Valid","confirmed":true})
+            )
+            .valid
+        );
+    }
+
+    #[test]
+    fn charging_site_search_bounds_coordinates_and_server_filter() {
+        let input = json!({"latitude":0,"longitude":0,"connector_type":"CCS","max_results":20});
+        let request = request("charging-sites", &input, None).expect("reviewed map search");
+        assert_eq!(
+            request.variables["filter"]["searchLocation"],
+            json!({"latitude":0,"longitude":0})
+        );
+        assert_eq!(request.variables["filter"]["maxResults"], 20);
+        assert_eq!(request.endpoint, LiveEndpoint::Gateway);
+        for invalid in [
+            json!({"latitude":91,"longitude":0,"connector_type":"CCS"}),
+            json!({"latitude":0,"longitude":181,"connector_type":"CCS"}),
+            json!({"latitude":0,"longitude":0,"connector_type":"other"}),
+            json!({"latitude":0,"longitude":0,"connector_type":"NACS","max_results":101}),
+            json!({"latitude":0,"longitude":0,"connector_type":"NACS","filter":{}}),
+        ] {
+            assert!(!validate_request("charging-sites", &invalid).valid);
+        }
+    }
+
     fn account() -> Value {
         json!({"data":{"currentUser":{"id":"owner-1","firstName":"Test","lastName":"Owner","vehicles":[{"id":"vehicle-1","name":"My R1T","vehicle":{"model":"R1T","modelYear":"2025"}}]}}})
     }
@@ -756,7 +1144,7 @@ mod tests {
     }
 
     #[test]
-    fn every_live_catalog_example_has_exactly_one_fixed_query() {
+    fn every_live_catalog_example_has_exactly_one_fixed_document() {
         for operation in catalog() {
             let result = request(&operation.id, &operation.example_variables, None);
             assert_eq!(
@@ -766,7 +1154,7 @@ mod tests {
                 operation.id
             );
             if let Ok(request) = result {
-                assert!(request.query.starts_with("query "));
+                assert!(request.query.starts_with(&format!("{} ", operation.kind)));
                 assert!(
                     request
                         .endpoint
@@ -775,6 +1163,53 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn imported_documents_must_match_exact_reviewed_endpoint_name_and_bytes() {
+        let read = request("current-user", &json!({}), None).unwrap();
+        assert_eq!(
+            admit_document(read.endpoint.url(), &read.operation_name, &read.query),
+            Some("current-user".into())
+        );
+        assert!(
+            admit_document(
+                "https://example.com/graphql",
+                &read.operation_name,
+                &read.query
+            )
+            .is_none()
+        );
+        assert!(admit_document(read.endpoint.url(), "WrongName", &read.query).is_none());
+        assert!(
+            admit_document(
+                read.endpoint.url(),
+                &read.operation_name,
+                &(read.query.clone() + " ")
+            )
+            .is_none()
+        );
+        assert!(
+            admit_document(
+                read.endpoint.url(),
+                "Login",
+                crate::inventory::reviewed_document("Login")
+                    .unwrap_or("mutation Login { login { accessToken } }")
+            )
+            .is_none()
+        );
+        let rename = request(
+            "rename-vehicle",
+            &json!({"vehicle_id":"vehicle-1","name":"New name"}),
+            None,
+        )
+        .unwrap();
+        assert_eq!(
+            admit_document(rename.endpoint.url(), &rename.operation_name, &rename.query),
+            Some("rename-vehicle".into())
+        );
+        assert!(requires_confirmation("rename-vehicle"));
+        assert!(!requires_confirmation("current-user"));
     }
 
     #[test]

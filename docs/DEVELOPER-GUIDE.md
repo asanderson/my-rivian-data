@@ -5,7 +5,7 @@
 My Rivian Data has owner views grouped by purpose and a separate **API explorer**
 under Developer tools. Both use bounded shared validation and native execution.
 The default mode signs in to the unofficial Rivian API and executes admitted
-read operations; `--demo` explicitly selects synthetic data with no network access.
+33 fixed reads, an explicitly confirmed vehicle rename, and a separate native stream; `--demo` explicitly selects synthetic data with no network access.
 Real-account compatibility has not yet been verified; see [status](STATUS.md).
 
 ## Local API explorer
@@ -22,7 +22,7 @@ view restores the plain-language presentation of the selected vehicle.
 This is an explorer for the application's **local adapter API**. It is not Swagger
 UI, an OpenAPI specification or a complete Rivian GraphQL schema.
 The [coverage inventory](API-COVERAGE.md) records upstream mapping and provenance. Catalog IDs such as `charging-history` name local operations.
-Every execution goes through `POST /api/execute`; the request body contains an
+Read execution goes through `POST /api/execute`; the request body contains an
 `operation_id` and `variables`:
 
 ```json
@@ -36,8 +36,11 @@ The shared validator first checks the variables in WASM, then compares its resul
 with `POST /api/validate`. The host revalidates at execution and requires a valid
 local session, per-instance capability and CSRF token. Live vehicle IDs must also
 belong to the signed-in account; a syntactically valid identifier is insufficient. The explorer does not display authentication secrets
-or turn an arbitrary endpoint into a proxy. Planned subscriptions and blocked
-commands remain unavailable in either presentation.
+or turn an arbitrary endpoint into a proxy. The 244-row catalog records 234 known source surfaces with source/review dates, schemas, prerequisites and verification status. Physical commands remain blocked until legitimate desktop enrollment is proven.
+
+**Reviewed document import** accepts only exact compiled endpoint/name/document matches and bounded variables through `POST /api/catalog/admit`. Admission resolves an existing operation ID; it does not dispatch imported GraphQL. **Live updates** starts/stops the separate native worker through protected telemetry routes and polls bounded snapshots. Only eleven reviewed read topics are admitted.
+
+For **Rename vehicle**, prepare the exact variables through `POST /api/commands/prepare`, review them, then explicitly confirm through `POST /api/commands/execute`. The native ticket is one-use, expires after two minutes, and is bound to the account epoch and exact variables. Ordinary `/api/execute` refuses mutations. Writes are sent once; ambiguous outcomes require checking the current vehicle name before any new manual attempt.
 
 The screenshot below is a sample-mode example, not evidence of a live account test.
 
@@ -74,7 +77,7 @@ The scripts invoke npm's JavaScript entry point through Node without a shell. If
 
 ## Verify
 
-`node scripts/verify.mjs` runs formatting checks, the release build, clippy with warnings rejected, workspace tests, TypeScript checking, UI unit tests and native/WASM parity. The parity check runs the **compiled WASM** in Node, compares every checked-in fixture and the catalog with native Rust output, and checks that a 64 MiB memory ceiling is enforced. It can also run alone after a build:
+`node scripts/verify.mjs` runs formatting checks, the release build, clippy with warnings rejected, workspace tests, TypeScript checking, UI unit tests, delivery/measurement/release regression tests and native/WASM parity. The parity check runs the **compiled WASM** in Node, compares validation and Parallax/error fixtures, catalogs and the reviewed inventory with native Rust output, and checks that a 64 MiB memory ceiling is enforced. It can also run alone after a build:
 
 ```text
 node scripts/check-parity.mjs
@@ -96,10 +99,10 @@ and corresponding source. Configuration is not evidence that those CI jobs have 
 
 | Path | Responsibility |
 | --- | --- |
-| `crates/rivian-core` | Portable catalog, bounded validation, normalization and synthetic fixtures |
+| `crates/rivian-core` | Portable inventory, fixed operations, validation, normalization and bounded Parallax state |
 | `crates/rivian-wasm` | Non-secret WASM exports of the shared core |
 | `crates/rivian-host` | Axum loopback service, local/account authority and embedded assets |
-| `crates/rivian-api` | Fixed Rivian HTTPS operations, authentication and session-only tokens |
+| `crates/rivian-api` | Fixed HTTPS/WebSocket transport, authentication, native OS vault, account/resource authority and lifecycle epochs |
 | `ui` | React/TypeScript interface and native-host HTTP adapter |
 | `fixtures` | Synthetic fixtures consumed by native/WASM verification |
 | `scripts` | Portable dependency setup, build and verification |
@@ -129,20 +132,20 @@ not notarized. Checksums provide integrity checks, not publisher authentication.
 Current CI artifact retention is seven days; this is not a permanent release
 channel or an automatic updater.
 
+See [desktop delivery](RELEASE.md) for native installer prerequisites, clean-source integrity, SBOMs, verified local updates/rollback and optional signed-candidate gates. See [acceptance](ACCEPTANCE.md) for sanitized owner evidence and resource measurements.
+
 ## Security and further release work
 
 The native host checks Host/Origin, bootstrap, a local cookie, a per-instance
 application capability and CSRF. The capability is stored in origin-scoped tab
 session storage and required even for `/api/session`; a cookie replayed across
 loopback ports cannot recover local authority on its own. Rivian session tokens
-remain native and memory-only. Neither the WASM interface nor the developer
+remain native, in memory by default; explicit Remember sign-in uses the OS credential store. Passwords are never persisted. Neither the WASM interface nor the developer
 explorer exposes tokens, keys or arbitrary network access.
 
 WASM linear memory is capped at 64 MiB. The browser advisory validator never
 establishes vehicle ownership. Native account authorization and exact operation
-admission are rechecked at execution. The app does not persist account data or
-implement remembered sessions. A future OS-vault implementation must be reviewed
-before adding that feature.
+admission are rechecked at execution. Remembered restoration revalidates identity and ownership. Windows Credential Manager, macOS Keychain or Linux Secret Service stores only the opted-in native session bundle. `--session-only` disables remembered-entry reads and writes. Locked stores permit session-only sign-in; deletion failures remain visible. No plaintext or production mock fallback exists. Owner readings/history are not cached to disk.
 
 See the [security review](SECURITY-REVIEW.md), [API inventory](API-COVERAGE.md) and
 [implementation status](STATUS.md). Live acceptance with owner credentials, signed
@@ -158,6 +161,8 @@ retain their own [licenses and notices](THIRD-PARTY-NOTICES.md).
 ```text
 my-rivian-data --help
 my-rivian-data --demo
+my-rivian-data --session-only
+my-rivian-data --catalog-json
 my-rivian-data --port 43127
 my-rivian-data --no-open --print-launch-url
 ```
@@ -174,6 +179,9 @@ URL alone does not authorize a browser session.
 - [Architecture, design boundaries, local API and data flow](ARCHITECTURE.md)
 - [API coverage and provenance](API-COVERAGE.md)
 - [Security review and findings](SECURITY-REVIEW.md)
+- [Desktop delivery and signed candidate gates](RELEASE.md)
+- [Acceptance and resource evidence](ACCEPTANCE.md)
+- [Phase I completion ledger](PHASE-I-COMPLETION.md)
 - [Implementation status and validation evidence](STATUS.md)
 - [Standalone PNG diagrams and editable sources](diagrams/README.md)
 - [Third-party licenses and notices](THIRD-PARTY-NOTICES.md)

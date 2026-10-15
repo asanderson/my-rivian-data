@@ -1,17 +1,44 @@
 # My Rivian Data diagrams
 
-These standalone PNGs explain Phase 1 live account reads and explicit demo mode. Green identifies
-native application/build components, blue identifies browser/source components,
-and amber calls out scope or release limitations. Labels carry the meaning as well
-as color. Mobile apps are explicitly marked as later work. Real-account acceptance and signed
-consumer delivery are not implied by these diagrams.
+These standalone PNGs explain how an owner connects an account, reads vehicle data,
+receives live updates and starts the desktop app. Green identifies native application
+and build components, blue identifies browser and source components, and amber
+identifies scope or acceptance limits. Labels carry the meaning as well as color.
 
 | Diagram | What it explains | Embedded in |
 | --- | --- | --- |
-| [System context](system-context.png) | Owner views and developer API explorer, computer, native host, direct Rivian access and later mobile reuse | [Architecture](../ARCHITECTURE.md#system-context) |
-| [Data flow](data-flow.png) | Bootstrap, account sign-in, native authorization, bounded live reads and owner/developer presentations | [Architecture](../ARCHITECTURE.md#session-sequence) |
-| [Build pipeline](build-pipeline.png) | Locked setup, WASM bindings, UI bundle, embedded native executable, and verification | [Developer guide](../DEVELOPER-GUIDE.md#build-from-source) |
-| [Installation and startup](installation-startup.png) | Source/package paths, platform matching, local sign-in and owner views | [Owner guide](../OWNER-GUIDE.md#get-started), [README](../../README.md#start-the-app) |
+| [System context](system-context.png) | Owner views, separate developer explorer, native authority, optional OS vault and direct Rivian access | [Architecture](../ARCHITECTURE.md#system-context) |
+| [Data flow](data-flow.png) | Protected bootstrap, sign-in or restoration, fixed reads, native WebSocket updates and confirmed nickname change | [Architecture](../ARCHITECTURE.md#session-sequence) |
+| [Build pipeline](build-pipeline.png) | Locked setup, shared Rust/WASM, React bundle, native executable, verification and desktop packaging | [Developer guide](../DEVELOPER-GUIDE.md#build-from-source) |
+| [Installation and startup](installation-startup.png) | Source/package paths, platform matching, local connection, owner views and session controls | [Owner guide](../OWNER-GUIDE.md#get-started), [README](../../README.md#start-the-app) |
+
+The Phase 1 architecture remains Rust/Axum + React + shared Rust/WASM. Native Rust
+owns account identity, resource ownership, account epochs and cancellation. The
+fixed catalog has 244 entries drawn from 234 source surfaces; 33 fixed reads and one
+explicitly confirmed vehicle rename are admitted for live dispatch. Exact-document
+admission resolves only an existing fixed operation; imported GraphQL is never
+proxied. Rename uses a one-use, two-minute ticket bound to the exact variables and
+native account epoch. Physical controls, phone/key enrollment and signed commands
+remain blocked.
+
+Native WebSocket telemetry requests and admits only 11 reviewed RVMs, dropping
+unrequested RVMs before retention or browser serialization. Owner views preserve
+per-field source freshness and show tire pressure only with a valid reading.
+Missing data stays unavailable; failed live requests never become demo samples.
+
+Account tokens stay native, in memory by default. Remember sign-in requires explicit
+owner opt-in and uses Linux Secret Service, macOS Keychain or Windows Credential
+Manager; passwords are never saved. Restored sessions recheck identity and ownership.
+`--session-only` disables remembered-entry reads and writes. Close app or ordinary
+process exit preserves prior opted-in sessions; End session or Disconnect account
+attempts vault deletion and reports deletion failures separately.
+
+Portable archives and native desktop packaging are implemented: Linux DEB/RPM,
+macOS app/DMG and Windows NSIS installer. Development delivery is unsigned; release
+signing and notarization require external credentials and verified evidence.
+Real-account acceptance, cross-OS owner acceptance, signing and independent
+Anthropic acceptance remain unverified. Android/iOS Tauri apps are Phase 2 work and
+are not implemented; they will invoke native Rust without an Axum server on the phone.
 
 ## Edit and regenerate
 
@@ -20,7 +47,7 @@ The editable sources are `context_dataflow.py` and `build_installation.py`;
 at twice the layout resolution for standalone viewing. Commit the generators and
 their rendered PNGs together when the implementation changes.
 
-Rendering requires Python 3.10 or newer, Pillow, and DejaVu Sans or Arial. These are
+Rendering requires Python, Pillow, and DejaVu Sans or Arial. These are
 optional documentation tools; application users and normal application builds do
 not need them. From the repository root, in a Python environment with Pillow installed:
 

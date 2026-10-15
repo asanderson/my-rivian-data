@@ -10,6 +10,8 @@ import type { IconName } from './Icon';
 import { OwnerView } from './OwnerView';
 import type { OwnerArea } from './OwnerView';
 import { DeveloperView } from './DeveloperView';
+import { RememberedSignIn } from './RememberedSignIn';
+import { useTelemetry } from './useTelemetry';
 import './styles.css';
 
 // Consume the launcher capability before rendering. Never persist it or put it in navigation.
@@ -20,7 +22,7 @@ if (window.location.hash) {
 }
 
 type View = OwnerArea | 'developer';
-type Session = 'loading' | 'ready' | 'ending' | 'ended' | 'error';
+type Session = 'loading' | 'ready' | 'ending' | 'ended' | 'closed' | 'close_error' | 'error';
 const ownerNavigation: { id: OwnerArea; label: string; icon: IconName }[] = [
   { id: 'overview', label: 'Overview', icon: 'grid' },
   { id: 'charging', label: 'Charging', icon: 'bolt' },
@@ -53,6 +55,10 @@ function App() {
   const [operations, setOperations] = useState<Operation[]>([]);
   const [wasm, setWasm] = useState<WasmModule | null>(null);
   const [wasmState, setWasmState] = useState<'loading' | 'ready' | 'failed'>('loading');
+  const live = useTelemetry(vehicleId, accountRevision, session === 'ready' && mode === 'live' && account.state === 'authenticated' && !garageLoading, error => {
+    if (accountExpired(error)) accountRequired();
+    else if (error instanceof ApiError && error.status === 401) expireSession();
+  });
 
   useEffect(() => {
     let active = true;
@@ -74,7 +80,7 @@ function App() {
             else garageProblem = error instanceof Error ? error.message : 'Your vehicles could not be loaded. Please retry.';
           }
         }
-        if (!Array.isArray(catalog) || !Array.isArray(garage) || catalog.length > 256 || garage.length > 64) {
+        if (!Array.isArray(catalog) || !Array.isArray(garage) || catalog.length > 1024 || garage.length > 64) {
           throw new Error('The app could not load your vehicles. Please relaunch it.');
         }
         if (!active) return;
@@ -109,7 +115,11 @@ function App() {
   async function accountChanged(status: AccountStatus) {
     if (!sessionOpen.current) return;
     const epoch = ++accountEpoch.current;
-    setVehicles([]); setVehicleId(''); setAccount(status); setSessionError(''); setAccountRevision(value => value + 1);
+    setVehicles([]); setVehicleId(''); setAccount(status);
+    setSessionError(status.remembered_session_removed === false || status.vault?.error === 'vault_delete_failed'
+      ? 'Disconnected, but the protected credential store could not remove the saved sign-in. Unlock the credential store, then choose End session to retry removing the saved sign-in.'
+      : status.remember_problem ? 'This sign-in could not be saved in the protected credential store. Your current app session is still available.' : '');
+    setAccountRevision(value => value + 1);
     if (status.state !== 'authenticated') return;
     setGarageLoading(true);
     try {
@@ -134,7 +144,7 @@ function App() {
   async function disconnect() {
     const epoch = ++accountEpoch.current;
     setVehicles([]); setVehicleId(''); setGarageLoading(true); setAccountRevision(value => value + 1);
-    try { await request('/api/account/logout', {}); if (!sessionOpen.current || epoch !== accountEpoch.current) return; setAccount({ state: 'signed_out' }); setSessionError(''); }
+    try { const ended = readAccountStatus(await request('/api/account/logout', {})); if (!sessionOpen.current || epoch !== accountEpoch.current) return; setAccount({ state: 'signed_out' }); setSessionError(ended.remembered_session_removed === false || ended.vault?.error === 'vault_delete_failed' ? 'Disconnected, but the protected credential store could not remove the saved sign-in. Unlock the credential store, then choose End session to retry removing the saved sign-in.' : ''); }
     catch (error) {
       if (!sessionOpen.current || epoch !== accountEpoch.current) return;
       if (error instanceof ApiError && error.status === 401) expireSession();
@@ -148,15 +158,17 @@ function App() {
     window.scrollTo({ top: 0, behavior: 'instant' });
   }
 
-  async function logout() {
+  async function logout(closeApp = false) {
     sessionOpen.current = false; accountEpoch.current += 1;
     // Unmount data views while logout is pending so late responses cannot reappear.
     setSession('ending'); setSessionError('');
     try {
-      await request<void>('/api/logout', {});
-      clearSession(); setVehicles([]); setOperations([]); setVehicleId(''); setSession('ended');
+      const ended = await request<{ remembered_session_removed?: boolean }>(closeApp ? '/api/application/quit' : '/api/logout', {});
+      if (!closeApp && ended?.remembered_session_removed === false) setSessionError('Your workspace ended, but the protected credential store could not remove the saved sign-in. Unlock the credential store, relaunch the app, then choose End session again to remove the saved sign-in.');
+      clearSession(); setVehicles([]); setOperations([]); setVehicleId(''); setSession(closeApp ? 'closed' : 'ended');
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) expireSession();
+      else if (closeApp) { clearSession(); setVehicles([]); setOperations([]); setVehicleId(''); setSession('close_error'); setSessionError('The app did not confirm that it stopped. Stop it in its terminal, then relaunch My Rivian Data to open a fresh workspace.'); }
       else { sessionOpen.current = true; setGarageLoading(false); setSession('ready'); setSessionError('We could not end the session. Try again, or stop the app in its terminal.'); }
     }
   }
@@ -174,16 +186,17 @@ function App() {
       <p className="sidebar-footer">Independent community project<br />Not affiliated with Rivian</p>
     </aside>
     <div className="main-shell">
-      <header className="topbar"><div className="breadcrumb"><span>{view === 'developer' ? 'Developer tools' : 'Your workspace'}</span><span aria-hidden="true">/</span><strong>{viewLabel}</strong></div><div className="topbar-actions">{ready && vehicles.length > 0 && <div className="vehicle-picker"><label htmlFor="vehicle-select">Vehicle</label><select id="vehicle-select" value={vehicleId} onChange={event => setVehicleId(event.target.value)}>{vehicles.map(vehicle => <option key={vehicle.id} value={vehicle.id}>{vehicle.name}</option>)}</select></div>}{ready && <button className="end-session" onClick={() => void logout()}><Icon name="out" /><span>End session</span></button>}</div></header>
+      <header className="topbar"><div className="breadcrumb"><span>{view === 'developer' ? 'Developer tools' : 'Your workspace'}</span><span aria-hidden="true">/</span><strong>{viewLabel}</strong></div><div className="topbar-actions">{ready && vehicles.length > 0 && <div className="vehicle-picker"><label htmlFor="vehicle-select">Vehicle</label><select id="vehicle-select" value={vehicleId} onChange={event => setVehicleId(event.target.value)}>{vehicles.map(vehicle => <option key={vehicle.id} value={vehicle.id}>{vehicle.name}</option>)}</select></div>}{ready && <button className="end-session" onClick={() => void logout()}><Icon name="out" /><span>End session</span></button>}{ready && <button className="end-session close-app" onClick={() => void logout(true)}>Close app</button>}</div></header>
       <main id="main" tabIndex={-1}>
-        {!ready ? <section className="session-panel" aria-live="polite"><Icon name={session === 'loading' || session === 'ending' ? 'leaf' : 'lock'} /><p className="eyebrow">MY RIVIAN DATA</p><h1>{session === 'loading' ? 'Opening your workspace…' : session === 'ending' ? 'Ending your session…' : session === 'ended' ? 'Your session has ended.' : 'Open a fresh session.'}</h1><p>{session === 'loading' ? 'Connecting to the app on this device.' : session === 'ending' ? 'Closing your workspace.' : session === 'ended' ? 'Relaunch My Rivian Data to open your workspace again.' : sessionError}</p><p className="muted">{mode === 'demo' ? 'No Rivian account is connected. This demo uses made-up vehicles and data.' : 'Account information stays in the app on this device until you disconnect or stop it.'}</p></section> : <>
+        {!ready ? <section className="session-panel" aria-live="polite"><Icon name={session === 'loading' || session === 'ending' ? 'leaf' : 'lock'} /><p className="eyebrow">MY RIVIAN DATA</p><h1>{session === 'loading' ? 'Opening your workspace…' : session === 'ending' ? 'Ending your session…' : session === 'close_error' ? 'Close could not be confirmed.' : session === 'closed' ? 'The app has closed.' : session === 'ended' ? 'Your session has ended.' : 'Open a fresh session.'}</h1><p>{session === 'loading' ? 'Connecting to the app on this device.' : session === 'ending' ? 'Closing your workspace.' : session === 'closed' || session === 'ended' ? 'Relaunch My Rivian Data to open your workspace again.' : sessionError}</p>{sessionError && (session === 'ended' || session === 'closed') && <p role="alert">{sessionError}</p>}<p className="muted">{mode === 'demo' ? 'No Rivian account is connected. This demo uses made-up vehicles and data.' : 'Account information stays in the app on this device until you disconnect or stop it.'}</p></section> : <>
           {mode === 'demo' && <div className="demo-notice"><Icon name="shield" /><p><strong>Offline demo</strong> Sample vehicles and data only. No account is connected, and nothing here can change your vehicle.</p></div>}
           {sessionError && <p className="error-message" role="alert">{sessionError}</p>}
-          {mode === 'live' && account.state !== 'authenticated' ? <AccountView account={account} onChanged={accountChanged} onSessionExpired={expireSession} /> : <>
+          {mode === 'live' && account.state !== 'authenticated' ? <AccountView key={accountRevision} account={account} onChanged={accountChanged} onSessionExpired={expireSession} /> : <>
             {mode === 'live' && <div className="account-connected"><p><strong>Connected to Rivian.</strong> Readings may be delayed or unavailable while your vehicle is asleep.</p><button type="button" disabled={garageLoading} onClick={() => void disconnect()}>Disconnect account</button></div>}
+            {mode === 'live' && <RememberedSignIn key={accountRevision} onSessionExpired={expireSession} onAccountExpired={accountRequired} />}
             {garageLoading ? <p role="status">Loading your vehicles…</p> : vehicles.length === 0 && view !== 'developer' ? <section className="session-panel"><h1>No vehicles available</h1><p>Rivian did not return any vehicles for this account. Check your account access, then try again.</p><button className="button button-secondary" onClick={() => void accountChanged(account)}>Retry vehicle list</button></section> : view === 'developer'
-              ? <DeveloperView key={accountRevision} mode={mode} operations={operations} vehicleId={vehicleId} wasm={wasm} wasmState={wasmState} onSessionExpired={expireSession} onAccountExpired={accountRequired} />
-              : <OwnerView key={accountRevision} mode={mode} area={view} vehicles={vehicles} vehicleId={vehicleId} onSelectVehicle={setVehicleId} onNavigate={navigate} wasm={wasm} wasmState={wasmState} onSessionExpired={expireSession} onAccountExpired={accountRequired} />}
+              ? <DeveloperView key={accountRevision} mode={mode} operations={operations} vehicleId={vehicleId} wasm={wasm} wasmState={wasmState} onSessionExpired={expireSession} onAccountExpired={accountRequired} live={live} />
+              : <OwnerView key={accountRevision} mode={mode} area={view} vehicles={vehicles} vehicleId={vehicleId} onSelectVehicle={setVehicleId} onNavigate={navigate} wasm={wasm} wasmState={wasmState} onSessionExpired={expireSession} onAccountExpired={accountRequired} live={live} />}
           </>}
           <footer className="page-footer"><span><Icon name="lock" />On your device · {mode === 'demo' ? 'Sample data only' : 'Your Rivian data'}</span><span>My Rivian Data is an independent, unofficial project.</span></footer>
         </>}

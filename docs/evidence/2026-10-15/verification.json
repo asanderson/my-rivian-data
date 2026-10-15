@@ -1,0 +1,44 @@
+{
+  "source_revision": "752677633c37710ee9766187414a1788545c99dc",
+  "runtime_binary_sha256": "61b831e35c8282bc9e39e5ad2a8016aa9f621aa1c63550d36dc32b2fb8868ee1",
+  "source_archive_sha256": "f14fb27c32439d21fc92a00fa4ce500dce737bd81fa34cf823f5aa7477980aec",
+  "platform": "Linux x86_64; kernel 6.18.44; local executable GNU libc floor 2.39",
+  "toolchain": {
+    "rust": "1.99.0",
+    "node": "24.19.0",
+    "chromium": "153.0.8010.0"
+  },
+  "checks": {
+    "rust_tests": 139,
+    "ui_tests": 44,
+    "delivery_tests": 14,
+    "native_wasm_parity": {
+      "demo": 22,
+      "live_validation": 46,
+      "telemetry_error": 25,
+      "source_inventory_entries": 234,
+      "catalog_rows": 244,
+      "wasm_memory_limit_bytes": 67108864
+    },
+    "strict_clippy": "passed",
+    "rust_format": "passed",
+    "typescript": "passed",
+    "release_build": "passed",
+    "demo_browser": "passed",
+    "fake_only_live_browser": "passed",
+    "portable_package_checks": "passed"
+  },
+  "commands": [
+    "node scripts/verify.mjs",
+    "npm run test:browser --prefix ui (PLAYWRIGHT_CHROMIUM_EXECUTABLE set to Chromium 153)",
+    "node scripts/package.mjs --portable-only",
+    "node scripts/check-packages.mjs --portable-only",
+    "node scripts/benchmark.mjs --demo --duration-seconds 120 --concurrency 2 --binary dist/my-rivian-data-0.2.0-linux-x64/my-rivian-data"
+  ],
+  "limits": [
+    "Browser live-mode replies use synthetic mocks; no Rivian account or vehicle was used.",
+    "Native OS credential-store round trips were not performed.",
+    "Local portable checks skip native installers; clean-machine matrix/signing and independent-provider acceptance remain open.",
+    "This exact Linux development artifact requires GNU libc 2.39; CI native packages enforce a 2.35 build baseline."
+  ]
+}

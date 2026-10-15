@@ -1,134 +1,130 @@
 # Implementation status
 
-Application: My Rivian Data. Date: 2026-10-09.
-Milestone: Phase 1 native live account reads, with explicit offline demo mode.
+Application: My Rivian Data. Updated: 2026-10-15.
+Milestone: Phase I desktop implementation, preserving Rust/Axum + React/Rust-WASM.
 
-## Implemented
+Implemented source, automated synthetic evidence and external release acceptance
+are separate. Catalog `live` means a fixed contract is admitted by the code; it
+does not mean a real account or firmware has accepted it. The remaining external
+gates below are not silently treated as complete.
 
-- Default live sign-in with Rivian email/password, pending verification and OTP.
-  Passwords are not saved; native account tokens stay in process memory.
-- Fixed-destination HTTPS transport with TLS verification, no redirects or automatic
-  system proxy, finite timeouts, bounded replies, sanitized errors and rate limits.
-- Application-session rotation and one bounded read retry on an authentication
-  failure. Invalid user sessions require a new sign-in; no unverified refresh-token
-  exchange or stored-password re-login is used.
-- Eighteen admitted read operations across account, vehicle telemetry, charging,
-  schedules, wall chargers, software metadata, image metadata, drivers and orders.
-  See [coverage and provenance](API-COVERAGE.md) for exact mappings and gaps.
-- Native account/vehicle authorization, including strict vehicle association for
-  charging history and rejection of contradictory response identifiers.
-- Owner overview, charging, vehicle health readings and location, with missing
-  values retained as unavailable and request time distinct from observation time.
-- Separate developer API explorer with admitted operations, variables, local
-  requests, upstream operation details and response JSON.
-- Explicit `--demo` mode with fictional vehicles, fixed timestamps, no Rivian
-  traffic and no credential entry. Live failures never substitute sample data.
-- Single-use bootstrap, local session cookie plus per-instance capability on every
-  protected request, CSRF, Host/Origin enforcement, bounded input and output,
-  revocation/cancellation, guarded static assets and restrictive response headers.
-- Owner-first documentation, live sign-in screenshot, standalone PNG architecture,
-  data-flow, build and installation diagrams with editable sources.
-- Portable setup/build/verification and unsigned packaging with documentation,
-  notices, checksums and corresponding source; three-OS CI configuration.
+## Implemented scope
+
+- Default live sign-in with Rivian email/password, bounded OTP verification,
+  ten-minute MFA expiry and rate-limited resend. Passwords and MFA challenges are
+  never persisted, and no password replay or invented refresh-token grant is used.
+- Memory-only new sign-ins with explicit remembered-session opt-in through Linux
+  Secret Service, macOS Keychain or Windows Credential Manager. Fixed-entry lease,
+  bounded serialized I/O, epoch-aware late-write cleanup, identity/ownership
+  revalidation on restore, visible deletion failure and `--session-only` isolation.
+  No plaintext or production mock-store fallback.
+- Fixed-destination HTTPS transport with verified TLS, no redirects/system HTTP
+  proxy, finite timeouts, bounded replies, strict envelopes and sanitized errors.
+  Read renewal is limited; writes are never automatically retried.
+- Versioned 234-surface known-source inventory and fixed 244-row browser catalog,
+  including implemented, documented and blocked entries with provenance and
+  verification metadata. There are 33 fixed reads, one explicitly confirmed
+  vehicle rename and a separately controlled native stream. See [API coverage](API-COVERAGE.md).
+- Native account/resource authorization, including current owned vehicles and
+  fresh order/wallbox checks. Exact-document import resolves only to existing
+  fixed contracts; it cannot create a proxy or grant execution.
+- Native selected-vehicle WebSocket lifecycle with eleven reviewed read RVMs,
+  bounded handshake/ack/heartbeat/idle waits and reconnects, epoch cancellation,
+  vehicle replacement and unrequested-topic rejection before decode/retention.
+- Portable bounded Parallax decoder and timestamp-aware partial merge. Missing
+  physical tags remain missing, encoded zero/false is retained, source age stays
+  per-field, tire pressure follows valid measurement age and stopped charging
+  cannot retain apparently active power.
+- Owner overview, charging, vehicle health and location; refresh and live-update
+  controls; separate developer explorer with reviewed contracts and bounded JSON.
+  The sole write reviews exact rename variables and consumes a native one-use
+  two-minute ticket bound to the account epoch.
+- Explicit offline `--demo` with fictional vehicles, fixed times, no credential
+  entry, remembered-store access or Rivian traffic. Live failures never become
+  sample readings.
+- One-use local bootstrap, cookie plus per-instance capability on every protected
+  route, CSRF and Host/Origin checks, post-body reauthorization, native epoch capture,
+  cancellation, guarded assets and restrictive response headers.
+- Desktop portable archives, Windows per-user installer, Intel/Apple Silicon
+  macOS app/DMG and Linux DEB/RPM packaging paths. Clean-revision rebuilds, complete
+  file/source/lock hashes, both SBOMs, local update/rollback tools, signed-candidate
+  gates, package checks and owner acceptance helpers. Ordinary CI artifacts are
+  unsigned; workflows do not publish a release.
+- Owner-first documentation and four embedded standalone PNG diagrams with their
+  editable generation sources. Screenshots were refreshed from the October 14 automated sample/startup runs; they contain fictional data or the signed-out form.
 
 ## Verification evidence
 
-Linux implementation checks use Rust 1.99.0, Node 24 and the matching locked
-wasm-bindgen CLI. Deterministic API tests use synthetic server replies and do not
-require credentials, contact an owner's vehicle or establish upstream acceptance.
+Linux checks use the pinned Rust 1.99.0 toolchain, Node 24 and matching locked
+wasm-bindgen CLI. Synthetic server fixtures and browser mocks do not contact an
+owner's vehicle or establish real Rivian acceptance. Current verification results
+are recorded after the final implementation run; no cross-platform result is
+inferred from this host.
 
-| Check | Recorded evidence |
+The final patched Linux run of `node scripts/verify.mjs` passed: 139 Rust tests
+(71 native API, 37 core, 3 host confirmation, 21 HTTP security, 7 WASM),
+44 UI tests, 14 delivery/measurement/release tests, strict clippy, formatting,
+TypeScript and the embedded release build. Compiled native/WASM parity covered
+22 demo, 46 live-validation and 25 telemetry/error fixtures, both inventories
+(234 source entries / 244 catalog rows), and the enforced 64 MiB memory ceiling.
+
+Both Chromium smoke suites passed on the native release executable. Demo checks
+cover owner/developer views, vehicle switching, stale replies, reload/logout,
+CSP and desktop/mobile-width layout. The live-mode suite uses fake local replies
+for remembered sign-in/MFA resend, nullable readings, stream zero/age/vehicle
+guards, exact document admission, confirmed rename and account/session lifecycle;
+Close app also stopped the real native process. No real Rivian login was used.
+
+Dependency scans reported zero Rust vulnerabilities/warnings and zero npm
+vulnerabilities after updating Rustls 0.23.45 to 0.23.46 for four advisories
+published on October 14. No ignore exception was used. See the exact
+[advisory snapshot](evidence/2026-10-14/advisory-scans.json).
+
+The earlier untouched read-only baseline passed 51 Rust tests, 28 UI tests and
+37 native/WASM parity fixtures. Its historical package/advisory measurements are
+not reused as acceptance for newly added dependencies, telemetry, storage, writes
+or installers.
+
+## Resource measurement scope
+
+The implemented benchmark runner measures a fixed synthetic vehicle-state
+workload in explicit demo mode. It records startup, bounded latency observations,
+request counts, native backend RSS/CPU and artifact provenance when matched to a
+package. It excludes browser/driver resources and battery/power. Raw reports and
+summaries are produced under `artifacts/benchmarks/`.
+
+The final packaged runtime source `752677633c37710ee9766187414a1788545c99dc` completed a 120-second, two-worker synthetic run: 122,338 requests, zero failures, p95 2.542 ms, sampled native peak RSS 5.07 MiB, and mean native CPU 14.09% of one core. Executable/archive/payload disk use was 7.41 MiB / 8.80 MiB / 18.72 MiB. Exact source/executable digests, numeric raw observations and limitations are retained in [the packaged evidence](evidence/2026-10-15/README.md).
+
+No multi-day throughput, browser memory, battery impact or cross-platform performance is inferred. Earlier baseline runs are not used as current-build evidence.
+
+## External release acceptance
+
+| Gate | Current status |
 | --- | --- |
-| Release/quality checks | `scripts/verify.mjs` passed on the final source: formatting, release build, clippy, all 51 Rust tests and the UI/parity gates |
-| Rust advisory scan | `cargo-audit 0.22.2`: 0 vulnerabilities, no warnings; 1,296 RustSec advisories at database revision `7eebec69c352c7191b1f13eb95dd510eeca5d1de` |
-| Packaged Linux executable | Built from clean committed source, extracted outside the repository and launched successfully; embedded HTML/WASM, 18-read catalog, live signed-out status, binary checksum and corresponding source verified |
-| npm advisory scan | `npm audit`: 0 reported advisories across 70 packages, including development/optional dependencies |
-| Rust core | 18 tests passed, including bounded live schemas, ownership, normalization and missing fields |
-| WASM wrapper | 2 tests passed |
-| Native host security | 17 tests passed, including cookie-only recovery rejection, capability enforcement and logout lifecycle |
-| Native API transport | 14 tests passed, independently rerun with core and host security suites |
-| UI unit tests | 28 passed, including live envelopes, null readings, timestamp distinctions and session material handling |
-| Actual compiled-WASM parity | 22 demo fixtures plus 15 live fixtures and both catalogs match native results; 64 MiB memory ceiling checked |
-| Chromium demo smoke | Passed owner views, vehicle switching, stale-response suppression, errors/retry, developer response display and logout |
-| Chromium live smoke | Passed real native sign-in page, synthetic login/MFA replies, live owner presentation, developer details, reload and disconnect/logout boundaries |
-| Browser screenshot | Blank live sign-in captured from the real native app; no credentials or bootstrap link shown |
-| Documentation diagrams | Four PNGs regenerated and visually inspected |
+| Real Rivian sign-in, OTP/resend, reads, remembered restore and telemetry | Unverified with an owner's account and vehicle; requires owner-run results |
+| Vehicle/model/region/firmware and account-role matrix | Unverified; source or fixture review does not establish compatibility |
+| Legitimate desktop key enrollment/BLE pairing and physical commands | Not implemented/accepted; enrollment-dependent controls remain explicitly blocked |
+| Actual Windows/macOS signing, Apple notarization and signed release manifest | Workflows implemented; no successful execution with authorized signing credentials recorded |
+| Clean-machine install/launch/update/rollback/uninstall | Platform checks implemented; actual supported Windows/macOS/Linux acceptance remains open |
+| Independent Anthropic adversarial review and remediation/re-review | Outstanding; same-provider agents do not satisfy it |
+| Durable signed public release and owner release decision | Not performed; workflows do not publish |
+| Full runtime, battery and sustained multi-day throughput evidence | Not established by a short native synthetic workload |
 
-The RustSec database was last updated on 2026-10-09 at 10:12:02 +02:00.
-Advisory scans report known database matches at that snapshot; they are not a
-certification or proof that every dependency is free of vulnerabilities.
+Real-account acceptance must keep credentials and codes in the local app. The
+interactive helper saves only sanitized, owner-approved model/firmware and
+operation outcomes. A `blocked` or `not-tested` result is not a passing test.
+The full process is in [acceptance](ACCEPTANCE.md); delivery details are in
+[release](RELEASE.md).
 
-The browser suites exercise a real locally built native host. Their Rivian
-responses are deliberately synthetic; they are not live-account tests. The
-Playwright browser download failed in this environment, so tests used an external
-test-only Chromium 153.0.8010.0 installation via
-`PLAYWRIGHT_CHROMIUM_EXECUTABLE`. The product does not bundle that test browser.
+## Phase II and other future work
 
-The preceding main revision `9bd07945e2362f7c7eadc45e58da8f0bc7985431` passed
-[Linux, Windows and macOS CI](https://github.com/asanderson/my-rivian-data/actions/runs/37820327124).
-That is baseline evidence, not proof the live implementation has passed the same
-jobs. Current PR checks report its own cross-platform results. Formatting, clippy,
-release build and final test totals should be checked against that PR's results.
+Android/iOS Tauri hosts, mobile lifecycle, device tests and app-store packaging
+are not implemented. Mobile will invoke the reused native Rust core, not host an
+Axum server. Persistent vehicle history, collection/retention controls, exports
+and a remote auto-updater are not implemented.
 
-A no-credential attempt to reach Rivian's CSRF service from the implementation
-host failed at the network layer. No account password or Rivian token was used or
-logged. **Actual Rivian connectivity and owner-account acceptance are unverified.**
-
-## Remaining release work and limitations
-
-- Owner-run sign-in/MFA and read acceptance against a real account, with credentials
-  entered only into the local app. Verify per-vehicle generation, region and account role.
-- Signed vehicle controls, key enrollment/BLE pairing, command signing,
-  WebSocket/Parallax streaming and complete unofficial API coverage.
-- Remembered sessions, OS credential vaults, persistent history, collection,
-  retention settings and export. Current reads remain session-only snapshots.
-- Clean-machine Windows/macOS/Linux startup, supported OS baselines, signed
-  consumer installers, macOS notarization, signed updates and a durable release channel.
-- Independent-provider adversarial review and remediation/re-review. The current
-  review uses a separate agent from the implementation provider; it is not the
-  requested independent Anthropic review.
-- Phase 2 Tauri Android/iOS hosts, platform secure storage, lifecycle handling,
-  device testing and application-store packaging.
-- CPU, RAM, battery and full runtime-resource benchmarks. See the artifact-only
-  measurements below; they do not establish runtime memory budgets.
-- Sustained 24x7 agent execution and a measured multi-day subscription throughput
-  pilot. No such runner or validated token-consumption budget is claimed.
-
-
-## Artifact measurements
-
-Latest Linux x86_64 release measurements from this implementation:
-
-| Artifact | Bytes | Interpretation |
-| --- | --- | --- |
-| Linux portable archive | 6,487,341 | Measured package with executable, documentation, notices and corresponding source; archive size changes with source/documentation metadata |
-| Native executable | 4,865,744 | Includes the built browser interface and WASM |
-| Compiled WASM | 101,711 | Subset of the embedded interface, not additional runtime installation space |
-| UI asset files including WASM | 691,654 | Already embedded in the native executable |
-
-Packages additionally contain documentation, license notices and source. Build
-caches are not runtime installation requirements. Reliable native/browser RSS,
-CPU and battery measurements were unavailable in this environment, so no such
-measurements are asserted. The build host does not establish minimum supported
-Linux distribution or desktop hardware requirements.
-
-## Decisions and threat-driven changes
-
-- Cookie host scope is not treated as origin isolation. Every protected endpoint,
-  including session recovery, also requires a random per-instance capability in
-  origin-scoped tab storage. Rivian tokens are never stored there.
-- Revocation cancels in-flight native account work; requests are bound to their
-  original local/account lifecycle. UI epochs prevent old login or garage results
-  from restoring a disconnected account.
-- Malformed GraphQL errors, mismatched identifiers and incomplete readings fail
-  safely. Request receipt is not relabeled as fresh vehicle observation.
-- Unknown charging sessions are not assigned by guess, even to a single vehicle.
-  The account-wide developer read preserves access to those sessions.
-- Four passenger-door locks are not described as comprehensive vehicle security.
-  Battery charge is not battery health; missing fields do not imply zero or false.
-- Memory-only secret storage reduces persistence. It does not defeat a compromised
-  OS, browser extension, debugger, crash dump or same-origin script.
-- Ordinary release optimization remains enabled with LTO disabled. The preceding
-  environment's thin-LTO failure is not a reason to skip the ordinary release build.
-
-See [security review](SECURITY-REVIEW.md) for the review scope, findings and limits.
+The local app assumes a trusted OS/browser. Memory-only and protected storage do
+not defeat a compromised OS, extension, debugger, crash dump or same-origin script.
+A remote change or logout can remain unconfirmed when the network fails; local
+revocation, vault deletion status and remote outcome are reported separately.
+See [security boundary and review](SECURITY-REVIEW.md).

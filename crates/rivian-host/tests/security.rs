@@ -286,7 +286,7 @@ async fn csrf_is_required_for_execution_and_logout_and_logout_revokes() {
         )
         .await
         .unwrap();
-    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    assert_eq!(response.status(), StatusCode::OK);
     assert!(
         response.headers()[header::SET_COOKIE]
             .to_str()
@@ -439,7 +439,7 @@ async fn request_admitted_before_logout_cannot_execute_after_body_arrives() {
         )
         .await
         .unwrap();
-    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    assert_eq!(response.status(), StatusCode::OK);
     finish_tx.send(()).unwrap();
     assert_eq!(
         pending.await.unwrap().unwrap().status(),
@@ -571,7 +571,7 @@ async fn demo_mode_never_accepts_account_credentials() {
 
 #[tokio::test]
 async fn live_startup_is_signed_out_and_invalid_login_inputs_do_not_dispatch() {
-    let (state, token) = AppState::new(8765).unwrap();
+    let (state, token) = AppState::new_ephemeral(8765).unwrap();
     let router = app(state);
     let (cookie, csrf, capability) = login(&router, &token).await;
     let response = router
@@ -641,7 +641,7 @@ async fn live_startup_is_signed_out_and_invalid_login_inputs_do_not_dispatch() {
 
 #[tokio::test]
 async fn account_authentication_requires_the_local_capability_and_csrf() {
-    let (state, token) = AppState::new(8765).unwrap();
+    let (state, token) = AppState::new_ephemeral(8765).unwrap();
     let router = app(state);
     let (cookie, _, capability) = login(&router, &token).await;
     // Deliberately invalid fields keep this test offline even if boundary checks regress.
@@ -677,7 +677,7 @@ async fn account_authentication_requires_the_local_capability_and_csrf() {
 
 #[tokio::test]
 async fn credentials_body_released_after_logout_cannot_start_authentication() {
-    let (state, token) = AppState::new(8765).unwrap();
+    let (state, token) = AppState::new_ephemeral(8765).unwrap();
     let router = app(state);
     let (cookie, csrf, capability) = login(&router, &token).await;
     let (started_tx, started_rx) = tokio::sync::oneshot::channel();
@@ -711,10 +711,213 @@ async fn credentials_body_released_after_logout_cannot_start_authentication() {
         )
         .await
         .unwrap();
-    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    assert_eq!(response.status(), StatusCode::OK);
     finish_tx.send(()).unwrap();
     assert_eq!(
         pending.await.unwrap().unwrap().status(),
         StatusCode::UNAUTHORIZED
     );
+}
+
+#[tokio::test]
+async fn new_account_stream_and_command_routes_are_guarded_and_unavailable_in_demo() {
+    let (state, token) = AppState::new_demo(8765).unwrap();
+    let router = app(state);
+    let (cookie, csrf, capability) = login(&router, &token).await;
+    for (method, path, body) in [
+        ("GET", "/api/account/vault", json!({})),
+        ("POST", "/api/account/remember", json!({"remember":true})),
+        ("POST", "/api/account/otp/resend", json!({})),
+        ("GET", "/api/telemetry", json!({})),
+        (
+            "POST",
+            "/api/telemetry/start",
+            json!({"vehicle_id":"demo-r1t-001"}),
+        ),
+        ("POST", "/api/telemetry/stop", json!({})),
+        (
+            "POST",
+            "/api/catalog/admit",
+            json!({"endpoint":"https://attacker.example","operation_name":"Evil","document":"query Evil { token }","variables":{}}),
+        ),
+        (
+            "POST",
+            "/api/commands/prepare",
+            json!({"operation_id":"rename-vehicle","variables":{"vehicle_id":"demo-r1t-001","name":"Example"}}),
+        ),
+        (
+            "POST",
+            "/api/commands/execute",
+            json!({"confirmation_id":"arbitrary"}),
+        ),
+    ] {
+        let response = router
+            .clone()
+            .oneshot(
+                request(method, path, json!({}))
+                    .header(header::ORIGIN, ORIGIN)
+                    .header(header::COOKIE, &cookie)
+                    .header("x-csrf-token", &csrf)
+                    .header("x-app-capability", &capability)
+                    .body(if method == "GET" {
+                        Body::empty()
+                    } else {
+                        Body::from(body.to_string())
+                    })
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            response.status(),
+            StatusCode::BAD_REQUEST,
+            "{method} {path}"
+        );
+        assert_eq!(payload(response).await["error"]["code"], "demo_mode");
+    }
+}
+
+#[tokio::test]
+async fn delayed_account_bodies_cannot_adopt_a_post_logout_epoch() {
+    for (path, body) in [
+        (
+            "/api/account/login",
+            json!({"email":"invalid-address","password":""}),
+        ),
+        ("/api/account/otp", json!({"code":"123456"})),
+        ("/api/account/remember", json!({"remember":false})),
+        ("/api/account/otp/resend", json!({})),
+    ] {
+        let (state, token) = AppState::new_ephemeral(8765).unwrap();
+        let router = app(state);
+        let (cookie, csrf, capability) = login(&router, &token).await;
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        let (finish_tx, finish_rx) = tokio::sync::oneshot::channel();
+        let stream = futures_util::stream::once(async move {
+            started_tx.send(()).unwrap();
+            finish_rx.await.unwrap();
+            // Signed-out OTP/remember operations and invalid login stay offline,
+            // including when the admission epoch check regresses.
+            Ok::<_, std::io::Error>(axum::body::Bytes::from(body.to_string()))
+        });
+        let pending = tokio::spawn(
+            router.clone().oneshot(
+                request("POST", path, json!({}))
+                    .header(header::ORIGIN, ORIGIN)
+                    .header(header::COOKIE, &cookie)
+                    .header("x-app-capability", &capability)
+                    .header("x-csrf-token", &csrf)
+                    .body(Body::from_stream(stream))
+                    .unwrap(),
+            ),
+        );
+        started_rx.await.unwrap();
+        let response = router
+            .oneshot(
+                request("POST", "/api/account/logout", json!({}))
+                    .header(header::ORIGIN, ORIGIN)
+                    .header(header::COOKIE, &cookie)
+                    .header("x-app-capability", &capability)
+                    .header("x-csrf-token", &csrf)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        finish_tx.send(()).unwrap();
+        let response = pending.await.unwrap().unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED, "{path}");
+        assert_eq!(
+            payload(response).await["error"]["code"],
+            "account_auth_required",
+            "{path}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn closing_the_application_requires_csrf_and_revokes_its_session() {
+    let (state, token) = AppState::new_demo(8765).unwrap();
+    let shutdown = state.shutdown_receiver();
+    let router = app(state);
+    let (cookie, csrf, capability) = login(&router, &token).await;
+    let make = || {
+        request("POST", "/api/application/quit", json!({}))
+            .header(header::ORIGIN, ORIGIN)
+            .header(header::COOKIE, &cookie)
+            .header("x-app-capability", &capability)
+    };
+    let response = router
+        .clone()
+        .oneshot(make().body(Body::from("{}")).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    assert!(!*shutdown.borrow());
+    let response = router
+        .clone()
+        .oneshot(
+            make()
+                .header("x-csrf-token", &csrf)
+                .body(Body::from("{}"))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert!(
+        response.headers()[header::SET_COOKIE]
+            .to_str()
+            .unwrap()
+            .contains("Max-Age=0")
+    );
+    assert_eq!(payload(response).await["state"], "stopping");
+    assert!(*shutdown.borrow());
+    let response = router
+        .oneshot(
+            request("GET", "/api/catalog", json!({}))
+                .header(header::COOKIE, &cookie)
+                .header("x-app-capability", &capability)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn generic_execution_cannot_bypass_confirmation_or_admit_external_documents() {
+    let (state, token) = AppState::new_ephemeral(8765).unwrap();
+    let router = app(state);
+    let (cookie, csrf, capability) = login(&router, &token).await;
+    for (path, body, code) in [
+        (
+            "/api/execute",
+            json!({"operation_id":"rename-vehicle","variables":{"vehicle_id":"vehicle-1","name":"Example"}}),
+            "confirmation_required",
+        ),
+        (
+            "/api/catalog/admit",
+            json!({"endpoint":"https://attacker.example","operation_name":"Evil","document":"query Evil { token }","variables":{}}),
+            "invalid_operation",
+        ),
+    ] {
+        let response = router
+            .clone()
+            .oneshot(
+                request("POST", path, json!({}))
+                    .header(header::ORIGIN, ORIGIN)
+                    .header(header::COOKIE, &cookie)
+                    .header("x-app-capability", &capability)
+                    .header("x-csrf-token", &csrf)
+                    .body(Body::from(body.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(payload(response).await["error"]["code"], code);
+    }
 }

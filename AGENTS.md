@@ -20,9 +20,10 @@ unless corresponding evidence actually exists.
 - Keep portable models, catalog validation and fixtures in `rivian-core`.
 - `rivian-wasm` wraps the same bounded, non-secret validation logic.
 - Native Rust owns application authority. Revalidate every operation in the host.
-- Never accept Rivian credentials in demo mode; never log or persist secrets.
+- Never accept Rivian credentials in demo mode; never log secrets or persist passwords.
+- Reusable account sessions may be persisted only after explicit owner opt-in in the native OS credential store; no plaintext file or mock backend fallback.
 - In live mode, send login inputs only to native Rust over the protected local
-  session. Keep Rivian session tokens native and memory-only. Do not invent a
+  session. Keep Rivian session tokens native, with memory-only as the default. Do not invent a
   refresh-token exchange or treat an unverified API as supported.
 - Account-owned vehicle IDs must be checked natively before dispatch; browser
   validation and a syntactically valid ID never establish account authority.

@@ -1,0 +1,121 @@
+name: Build signed desktop release candidates
+
+# No tag/push trigger and no public publication. A maintainer must deliberately
+# dispatch this workflow. Missing credentials fail before any candidate builds.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  signing-preflight:
+    runs-on: ubuntu-22.04
+    environment: desktop-release
+    steps:
+      - name: Require signing and notarization credentials
+        env:
+          RIVIAN_WINDOWS_PFX_BASE64: ${{ secrets.RIVIAN_WINDOWS_PFX_BASE64 }}
+          RIVIAN_WINDOWS_PFX_PASSWORD: ${{ secrets.RIVIAN_WINDOWS_PFX_PASSWORD }}
+          RIVIAN_TIMESTAMP_URL: ${{ secrets.RIVIAN_TIMESTAMP_URL }}
+          RIVIAN_MAC_P12_BASE64: ${{ secrets.RIVIAN_MAC_P12_BASE64 }}
+          RIVIAN_MAC_P12_PASSWORD: ${{ secrets.RIVIAN_MAC_P12_PASSWORD }}
+          RIVIAN_MAC_IDENTITY: ${{ secrets.RIVIAN_MAC_IDENTITY }}
+          RIVIAN_APPLE_ID: ${{ secrets.RIVIAN_APPLE_ID }}
+          RIVIAN_APPLE_TEAM_ID: ${{ secrets.RIVIAN_APPLE_TEAM_ID }}
+          RIVIAN_APPLE_APP_PASSWORD: ${{ secrets.RIVIAN_APPLE_APP_PASSWORD }}
+          RIVIAN_RELEASE_GPG_KEY: ${{ secrets.RIVIAN_RELEASE_GPG_KEY }}
+          RIVIAN_RELEASE_GPG_PASSPHRASE: ${{ secrets.RIVIAN_RELEASE_GPG_PASSPHRASE }}
+        run: |
+          python3 - <<'PY'
+          import os
+          names = ['RIVIAN_WINDOWS_PFX_BASE64', 'RIVIAN_WINDOWS_PFX_PASSWORD', 'RIVIAN_TIMESTAMP_URL', 'RIVIAN_MAC_P12_BASE64', 'RIVIAN_MAC_P12_PASSWORD', 'RIVIAN_MAC_IDENTITY', 'RIVIAN_APPLE_ID', 'RIVIAN_APPLE_TEAM_ID', 'RIVIAN_APPLE_APP_PASSWORD', 'RIVIAN_RELEASE_GPG_KEY', 'RIVIAN_RELEASE_GPG_PASSPHRASE']
+          missing = [name for name in names if not os.environ.get(name)]
+          if missing:
+              raise SystemExit('Release signing blocked: missing ' + ', '.join(missing))
+          PY
+  build:
+    needs: signing-preflight
+    environment: desktop-release
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-2025, macos-15-intel, macos-15]
+    runs-on: ${{ matrix.os }}
+    env:
+      MACOSX_DEPLOYMENT_TARGET: '13.0'
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24'
+      - run: rustup toolchain install 1.99.0 --profile minimal --component rustfmt --component clippy --target wasm32-unknown-unknown
+      - run: node scripts/setup.mjs
+      - run: node scripts/verify.mjs
+      - run: node --test scripts/tests/delivery.test.mjs scripts/tests/measurement.test.mjs scripts/tests/release.test.mjs
+      - name: Install Linux packaging tools
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y rpm desktop-file-utils
+      - name: Install pinned NSIS
+        if: runner.os == 'Windows'
+        run: choco install nsis --version=3.12 -y --no-progress
+      - name: Linux candidate (signed manifest follows)
+        if: runner.os == 'Linux'
+        run: node scripts/package.mjs
+      - name: Sign Windows/macOS packages and notarize macOS
+        if: runner.os != 'Linux'
+        env:
+          RIVIAN_WINDOWS_PFX_BASE64: ${{ secrets.RIVIAN_WINDOWS_PFX_BASE64 }}
+          RIVIAN_WINDOWS_PFX_PASSWORD: ${{ secrets.RIVIAN_WINDOWS_PFX_PASSWORD }}
+          RIVIAN_TIMESTAMP_URL: ${{ secrets.RIVIAN_TIMESTAMP_URL }}
+          RIVIAN_MAC_P12_BASE64: ${{ secrets.RIVIAN_MAC_P12_BASE64 }}
+          RIVIAN_MAC_P12_PASSWORD: ${{ secrets.RIVIAN_MAC_P12_PASSWORD }}
+          RIVIAN_MAC_IDENTITY: ${{ secrets.RIVIAN_MAC_IDENTITY }}
+          RIVIAN_APPLE_ID: ${{ secrets.RIVIAN_APPLE_ID }}
+          RIVIAN_APPLE_TEAM_ID: ${{ secrets.RIVIAN_APPLE_TEAM_ID }}
+          RIVIAN_APPLE_APP_PASSWORD: ${{ secrets.RIVIAN_APPLE_APP_PASSWORD }}
+        run: node scripts/package.mjs --signed
+      - run: node scripts/check-packages.mjs
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: candidate-${{ runner.os }}-${{ runner.arch }}
+          path: |
+            dist/*.tar.gz
+            dist/*.exe
+            dist/*.dmg
+            dist/*.deb
+            dist/*.rpm
+            dist/*.json
+            dist/*.SHA256SUMS
+            dist/*.sha256
+          if-no-files-found: error
+  signed-manifest:
+    needs: build
+    runs-on: ubuntu-22.04
+    environment: desktop-release
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: candidate-*
+          path: dist/release-candidate
+          merge-multiple: true
+      - name: Require complete native signature evidence and sign exact artifacts
+        env:
+          RIVIAN_RELEASE_GPG_KEY: ${{ secrets.RIVIAN_RELEASE_GPG_KEY }}
+          RIVIAN_RELEASE_GPG_PASSPHRASE: ${{ secrets.RIVIAN_RELEASE_GPG_PASSPHRASE }}
+        run: node scripts/sign-release-manifest.mjs dist/release-candidate
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: verified-signed-release-candidate
+          path: dist/release-candidate/*
+          if-no-files-found: error
+          retention-days: 7

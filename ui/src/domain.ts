@@ -4,13 +4,31 @@ export interface Operation {
   family: string;
   kind: 'query' | 'mutation' | 'subscription';
   description: string;
-  status: 'demo' | 'live' | 'planned' | 'blocked';
+  status: 'demo' | 'live' | 'planned' | 'blocked' | 'documented';
   upstream_operation?: string;
   upstream_document?: string;
   endpoint?: string;
   requires_vehicle: boolean;
   example_variables: Record<string, unknown>;
   source_url: string;
+  implementation_status?: 'documented' | 'implemented' | 'blocked';
+  verification_status?: string;
+  operation_name?: string;
+  category?: string;
+  graphql_document?: string;
+  document_fingerprint_sha256?: string | null;
+  schema?: Record<string, unknown>;
+  rvm?: string | null;
+  source_urls?: string[];
+  reviewed_at?: string;
+  source_version?: Record<string, string>;
+  last_tested_firmware?: string | null;
+  last_live_tested_at?: string | null;
+  prerequisites?: string[];
+  retry_policy?: string;
+  block_reason?: string | null;
+  requires_confirmation?: boolean;
+  resource_id_field?: string | null;
 }
 
 export interface Vehicle {
@@ -26,6 +44,7 @@ export interface Vehicle {
   temperature_celsius: number | null;
   location: { latitude: number; longitude: number; accuracy_m: number | null } | null;
   observed_at: string | null;
+  field_observed_at?: Record<string, string>;
   source: string;
 }
 

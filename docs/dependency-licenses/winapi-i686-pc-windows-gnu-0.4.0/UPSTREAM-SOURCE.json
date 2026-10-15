@@ -1,0 +1,6 @@
+{
+  "source": "https://github.com/retep998/winapi-rs/tree/796a8e6c2971dc2ff1bcff166e6671284f9b5b6b",
+  "origin": "License files from locked owning crate winapi 0.3.9. Its Cargo.toml declares the 0.4 target-support packages; target packages omit notice files from their published archives.",
+  "owning_package": "winapi 0.3.9",
+  "target_package": "winapi-i686-pc-windows-gnu-0.4.0"
+}

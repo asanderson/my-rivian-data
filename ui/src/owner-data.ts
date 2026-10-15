@@ -7,6 +7,7 @@ export interface ChargingStatus {
   battery_percent: number | null;
   limit_percent: number | null;
   power_kw: number | null;
+  field_observed_at?: Record<string, string>;
 }
 export interface ChargingSession {
   id: string;
@@ -20,7 +21,7 @@ export interface ChargingHistory {
   has_more: boolean;
   unassigned_count?: number;
 }
-export interface VehicleLocation { vehicle_id: string; location: Vehicle['location'] }
+export interface VehicleLocation { vehicle_id: string; location: Vehicle['location']; field_observed_at?: Record<string, string> }
 
 const invalid = () => new Error('This information could not be displayed. Please try again.');
 const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
@@ -31,6 +32,21 @@ const allowedMissing = (value: unknown, mode: AppMode) => value === null && mode
 const numberField = (value: unknown, min: number, max: number, mode: AppMode) => bounded(value, min, max) || allowedMissing(value, mode);
 const location = (value: unknown, mode: AppMode): value is Vehicle['location'] => allowedMissing(value, mode) || record(value) && bounded(value.latitude, -90, 90) && bounded(value.longitude, -180, 180) && numberField(value.accuracy_m, 0, 100_000, mode);
 
+/** Native HTTP timestamps use upstream field names; retain and normalize their source ages. */
+function fieldTimes(value: unknown): Record<string, string> | undefined {
+  if (value === undefined) return undefined;
+  if (!record(value) || Object.keys(value).length > 64) throw invalid();
+  const times: Record<string, string> = {};
+  for (const [key, at] of Object.entries(value)) { if (key.length > 128 || !timestamp(at)) throw invalid(); times[key] = at; }
+  const aliases: Record<string, string> = { battery_percent: 'batteryLevel', estimated_range_km: 'distanceToEmpty', odometer_km: 'vehicleMileage', temperature_celsius: 'cabinClimateInteriorTemperature', charging_state: 'chargerState', limit_percent: 'batteryLimit', location: 'gnssLocation' };
+  for (const [key, upstream] of Object.entries(aliases)) if (!times[key] && times[upstream]) times[key] = times[upstream];
+  // A newer passenger-door report may affect the composite lock state. Preserve
+  // the HTTP result until the stream is newer than every known door report.
+  const doors = ['doorFrontLeftLocked', 'doorFrontRightLocked', 'doorRearLeftLocked', 'doorRearRightLocked'].map(key => times[key]).filter(Boolean);
+  if (!times.locked && doors.length) times.locked = doors.reduce((latest, at) => Date.parse(at) > Date.parse(latest) ? at : latest);
+  return times;
+}
+
 /** A different vehicle's result must never be presented under the selected vehicle. */
 export function readVehicleState(value: unknown, vehicleId: string, mode: AppMode = 'demo'): Vehicle {
   const vehicle = record(value) ? value.vehicle : undefined;
@@ -40,14 +56,16 @@ export function readVehicleState(value: unknown, vehicleId: string, mode: AppMod
     !numberField(vehicle.odometer_km, 0, 10_000_000, mode) || !(typeof vehicle.locked === 'boolean' || allowedMissing(vehicle.locked, mode)) ||
     !(text(vehicle.charging_state) || allowedMissing(vehicle.charging_state, mode)) || !numberField(vehicle.temperature_celsius, -100, 100, mode) ||
     !location(vehicle.location, mode) || !(timestamp(vehicle.observed_at) || allowedMissing(vehicle.observed_at, mode)) || vehicle.source !== (mode === 'demo' ? 'synthetic-demo' : 'live')) throw invalid();
-  return vehicle as unknown as Vehicle;
+  const times = fieldTimes(vehicle.field_observed_at);
+  return { ...vehicle, ...(times ? { field_observed_at: times } : {}) } as unknown as Vehicle;
 }
 
 export function readChargingStatus(value: unknown, vehicleId: string, mode: AppMode = 'demo'): ChargingStatus {
   if (!record(value) || value.vehicle_id !== vehicleId || !text(value.state) ||
     !numberField(value.battery_percent, 0, 100, mode) || !numberField(value.limit_percent, 0, 100, mode) ||
     !numberField(value.power_kw, 0, 1000, mode)) throw invalid();
-  return value as unknown as ChargingStatus;
+  const times = fieldTimes(value.field_observed_at);
+  return { ...value, ...(times ? { field_observed_at: times } : {}) } as unknown as ChargingStatus;
 }
 
 export function readChargingHistory(value: unknown, vehicleId: string, mode: AppMode = 'demo'): ChargingHistory {
@@ -60,7 +78,9 @@ export function readChargingHistory(value: unknown, vehicleId: string, mode: App
 
 export function readVehicleLocation(value: unknown, vehicleId: string, mode: AppMode = 'demo'): VehicleLocation {
   if (!record(value) || value.vehicle_id !== vehicleId || !location(value.location, mode)) throw invalid();
-  return value as unknown as VehicleLocation;
+  const times = fieldTimes(value.field_observed_at);
+  if (value.observed_at !== undefined && value.observed_at !== null && !timestamp(value.observed_at)) throw invalid();
+  return { ...value, ...(times || timestamp(value.observed_at) ? { field_observed_at: { ...times, ...(timestamp(value.observed_at) ? { location: value.observed_at } : {}) } } : {}) } as unknown as VehicleLocation;
 }
 
 export function sampleDate(value: string | null): string {
