@@ -1,6 +1,6 @@
 # Implementation status
 
-Application: My Rivian Data. Updated: 2026-10-14.
+Application: My Rivian Data. Updated: 2026-10-15.
 Milestone: Phase I desktop implementation, preserving Rust/Axum + React/Rust-WASM.
 
 Implemented source, automated synthetic evidence and external release acceptance
@@ -93,11 +93,9 @@ request counts, native backend RSS/CPU and artifact provenance when matched to a
 package. It excludes browser/driver resources and battery/power. Raw reports and
 summaries are produced under `artifacts/benchmarks/`.
 
-An earlier ten-second Linux run preceded the final Phase I rebuild and lacked a
-matched source/executable digest record. Its measurements do not establish the
-current build's performance. No multi-day throughput, full browser memory budget,
-battery impact or cross-platform performance is claimed. See [measurement and
-acceptance guidance](ACCEPTANCE.md).
+The final packaged runtime source `752677633c37710ee9766187414a1788545c99dc` completed a 120-second, two-worker synthetic run: 122,338 requests, zero failures, p95 2.542 ms, sampled native peak RSS 5.07 MiB, and mean native CPU 14.09% of one core. Executable/archive/payload disk use was 7.41 MiB / 8.80 MiB / 18.72 MiB. Exact source/executable digests, numeric raw observations and limitations are retained in [the packaged evidence](evidence/2026-10-15/README.md).
+
+No multi-day throughput, browser memory, battery impact or cross-platform performance is inferred. Earlier baseline runs are not used as current-build evidence.
 
 ## External release acceptance
 

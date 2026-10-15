@@ -1,0 +1,68 @@
+{
+  "schema_version": 1,
+  "mode": "demo",
+  "workload": "synthetic fixed vehicle-state",
+  "scope": "native backend process only",
+  "started_at": "2026-10-15T01:32:18.407Z",
+  "platform": "linux",
+  "architecture": "x64",
+  "build": {
+    "executable_sha256": "61b831e35c8282bc9e39e5ad2a8016aa9f621aa1c63550d36dc32b2fb8868ee1",
+    "version": "0.2.0",
+    "source_revision": "752677633c37710ee9766187414a1788545c99dc",
+    "provenance": "matching package BUILD.json; source archive included in package"
+  },
+  "configuration": {
+    "duration_seconds": 120,
+    "concurrency": 2,
+    "sample_interval_ms": 500
+  },
+  "artifact_disk": {
+    "executable_bytes": 7772216,
+    "executable_sha256": "61b831e35c8282bc9e39e5ad2a8016aa9f621aa1c63550d36dc32b2fb8868ee1",
+    "portable_archive_bytes": 9226751,
+    "installed_payload_bytes": 19634059
+  },
+  "startup": {
+    "health_ready_ms": 24.889578999999998,
+    "protected_session_ms": 4.935994999999991
+  },
+  "runtime_ms": 120002.136026,
+  "interrupted": false,
+  "backend_exited_early": false,
+  "requests": {
+    "total": 122338,
+    "succeeded": 122338,
+    "failed": 0,
+    "statuses": {
+      "200": 122338
+    },
+    "per_second": 1019.4651866321273
+  },
+  "latency_ms": {
+    "min": 0.24035499999808962,
+    "mean": 1.9585234481681704,
+    "max": 1708.017203000003,
+    "p50": 1.6787049999984447,
+    "p95": 2.542284999988624,
+    "p99": 4.338661999994656,
+    "percentile_sample_count": 7647,
+    "percentile_sequence_stride": 16
+  },
+  "backend": {
+    "sampler": "proc",
+    "metric_samples": 230,
+    "metric_unavailable_count": 0,
+    "rss_peak_bytes": 5320704,
+    "rss_sample_mean_bytes": 5312565.426086957,
+    "cpu_seconds": 16.91,
+    "cpu_mean_percent_one_core": 14.092918704700267
+  },
+  "limitations": [
+    "Synthetic local data only; no Rivian account or API acceptance.",
+    "Backend excludes browser, benchmark driver and child processes.",
+    "RSS is sampled; CPU percentage uses one core as 100% and may exceed 100%.",
+    "Latency percentiles use bounded deterministic observations when sequence stride exceeds one.",
+    "No battery or power measurement. Other operating systems require their own runs."
+  ]
+}

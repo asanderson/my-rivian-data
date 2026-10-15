@@ -64,6 +64,6 @@
 **Files:** `packaging/**`, `scripts/package.mjs` and release/SBOM/benchmark/acceptance helpers, CI workflows, release/owner/developer documentation and completion ledger.
 - [x] Add checked installer sources for Windows/macOS/Linux with clean-source identity, exact checksums, notices and SBOM.
 - [x] Implement signing/notarization-required release workflow and protected rollback/update tooling; no PR can publish a signed release.
-- [ ] Run deterministic benchmark and outside-source package acceptance; retain sanitized raw/summary evidence.
-- [ ] Run full verification and independent source review, implement findings and publish PR without merging.
+- [x] Run deterministic benchmark and outside-source package acceptance; retain sanitized raw/summary evidence.
+- [x] Run full verification and independent source review, implement findings and publish PR without merging.
 - [x] Mark external real-account/vehicle, certificate-signing and independent-provider acceptance accurately.

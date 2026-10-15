@@ -93,7 +93,7 @@ transport failure can leave the remote outcome unknown; the UI tells the owner
 to inspect the vehicle name before preparing another change. This scope does not
 authorize physical vehicle actions or enroll a signing key.
 
-## October 14 verification and remediation
+## October 14–15 verification and remediation
 
 Independent-context same-provider reviews reproduced and corrected account epoch
 races, MFA challenge expiry, stream source-age conflicts, unrequested key-topic

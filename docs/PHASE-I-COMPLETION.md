@@ -21,9 +21,9 @@ Design and task details are under `docs/superpowers/`.
 - [x] Comprehensive versioned known-operation inventory and guarded writes.
 - [x] Protected remembered sessions and bounded MFA lifecycle.
 - [x] Desktop installers, SBOM, signing/rollback pipeline and acceptance tools.
-- [ ] Resource measurements and exact workload evidence.
+- [x] Resource measurements and exact workload evidence.
 - [x] Source/security review findings fixed and verification complete.
-- [ ] Completion PR published.
+- [x] Completion PR published: [PR #6](https://github.com/asanderson/my-rivian-data/pull/6).
 
 ## Review findings and evidence
 
@@ -36,6 +36,8 @@ Ruling: the branch-completion skill menu does not require a new integration deci
 A fresh final review additionally reproduced delayed disconnect cleanup affecting a newer login, vault write timeout invalidating otherwise valid memory sessions, and missing command ambiguity after dispatch cancellation. Logout now returns its exact CAS epoch; the host cleans only the source epoch and preserves newer tickets/workers. Vault writes use an acknowledgment/cancellation handoff under their own serialized gate, preserving account authority while deleting unaccepted writes. Canceled dispatched commands report unknown outcome and are never replayed. All reproductions passed after failing first; focused re-review found no remaining P1/P2.
 
 Final Linux verification: 139 Rust tests (71 API, 37 core, 3 confirmation, 21 HTTP security, 7 WASM), 44 UI tests, 14 delivery tests, strict checks, compiled parity and both browser suites. Native platform CI exposed an isolated-RPM-database dependency verification mistake and a Windows mandatory-lock test assumption; these were corrected without weakening payload checks or writer exclusion. Actual owner/OS-vault acceptance remains separate.
+
+Packaged runtime revision: `752677633c37710ee9766187414a1788545c99dc`. Its clean-source portable package passed extracted payload/embedded UI/WASM/protected-demo checks. The 120-second workload completed 122,338 requests with zero failures; [exact measurements, raw samples and provenance](evidence/2026-10-15/README.md) are retained. All implementable Phase I scope is delivered in PR #6; the release acceptance items below remain open.
 
 ## External release acceptance
 
