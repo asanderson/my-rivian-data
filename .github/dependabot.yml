@@ -1,0 +1,44 @@
+# Nightly dependency checks. Cargo and npm bumps update the lock files that
+# the --locked builds and the generated SBOMs are derived from; GitHub
+# Actions stay SHA-pinned (Dependabot keeps the version comment in step).
+# The Rust toolchain pin is outside Dependabot's reach; the upstream-toolchain
+# workflow covers it on the same cadence.
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: cron
+      cronjob: "52 6 * * *"   # nightly, 06:52 UTC
+    labels: [dependencies]
+    commit-message:
+      prefix: "deps"
+    groups:
+      cargo-minor-and-patch:
+        update-types: [minor, patch]
+      # Major bumps stay one PR each.
+
+  - package-ecosystem: npm
+    directory: /ui
+    schedule:
+      interval: cron
+      cronjob: "52 6 * * *"
+    labels: [dependencies]
+    commit-message:
+      prefix: "deps"
+    versioning-strategy: increase
+    groups:
+      npm-minor-and-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: cron
+      cronjob: "52 6 * * *"
+    labels: [dependencies]
+    commit-message:
+      prefix: "ci"
+    groups:
+      github-actions:
+        patterns: ["*"]
