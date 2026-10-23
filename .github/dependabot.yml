@@ -3,6 +3,8 @@
 # Actions stay SHA-pinned (Dependabot keeps the version comment in step).
 # The Rust toolchain pin is outside Dependabot's reach; the upstream-toolchain
 # workflow covers it on the same cadence.
+# No explicit labels: Dependabot then applies (and creates) its default
+# 'dependencies' label itself; a custom labels list must already exist.
 version: 2
 updates:
   - package-ecosystem: cargo
@@ -10,7 +12,6 @@ updates:
     schedule:
       interval: cron
       cronjob: "52 6 * * *"   # nightly, 06:52 UTC
-    labels: [dependencies]
     commit-message:
       prefix: "deps"
     groups:
@@ -23,7 +24,6 @@ updates:
     schedule:
       interval: cron
       cronjob: "52 6 * * *"
-    labels: [dependencies]
     commit-message:
       prefix: "deps"
     versioning-strategy: increase
@@ -36,7 +36,6 @@ updates:
     schedule:
       interval: cron
       cronjob: "52 6 * * *"
-    labels: [dependencies]
     commit-message:
       prefix: "ci"
     groups:
