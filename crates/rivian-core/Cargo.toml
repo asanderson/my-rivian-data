@@ -7,7 +7,7 @@ publish.workspace = true
 description = "Portable Rivian catalog, validation, normalization, and synthetic telemetry"
 
 [dependencies]
-base64 = "0.22"
+base64 = "0.23"
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
