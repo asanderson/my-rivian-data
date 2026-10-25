@@ -1,0 +1,80 @@
+name: Upstream toolchain check
+
+# Nightly: compare the pinned Rust toolchain (rust-toolchain.toml, mirrored
+# in the CI workflows and the developer guide) with the current stable
+# channel and open (or refresh) one pull request that bumps every pin
+# together. The Verify workflow then runs the full pinned-toolchain build on
+# that PR. Cargo, npm and GitHub Actions dependencies are covered by
+# Dependabot (.github/dependabot.yml) on the same nightly cadence.
+#
+# Token: the default GITHUB_TOKEN can push the branch and open the PR, but
+# pull requests it creates do not trigger the Verify workflow. Add a
+# fine-grained PAT (contents + pull-requests: write) as the
+# UPSTREAM_BUMP_TOKEN secret so CI runs on the bump PR automatically.
+
+on:
+  schedule:
+    - cron: "52 6 * * *"   # 06:52 UTC every night
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: upstream-toolchain
+  cancel-in-progress: false
+
+env:
+  BRANCH: auto/upstream-toolchain
+  PR_TITLE: "Bump the pinned Rust toolchain"
+
+jobs:
+  check:
+    name: compare the pinned toolchain with stable + open PR
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: true
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24'
+
+      - name: Compare the pinned toolchain with the stable channel and apply the bump
+        id: resolve
+        run: |
+          node scripts/upstream-toolchain.mjs --apply --summary /tmp/summary.md --github-output
+          cat /tmp/summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Check the rewritten pins agree with each other
+        if: steps.resolve.outputs.changed == 'true'
+        run: node --test scripts/tests/toolchain-pin.test.mjs
+
+      - name: Open or refresh the bump pull request
+        if: steps.resolve.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.UPSTREAM_BUMP_TOKEN || secrets.GITHUB_TOKEN }}
+          BASE: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B "$BRANCH"
+          git commit -am "$PR_TITLE"
+          # Skip the push when the open PR already carries exactly this content.
+          if git fetch -q origin "$BRANCH" 2>/dev/null \
+             && [ "$(git rev-parse "origin/$BRANCH^{tree}")" = "$(git rev-parse 'HEAD^{tree}')" ]; then
+            echo "PR branch already up to date."
+          else
+            git push --force origin "$BRANCH"
+          fi
+          gh label create dependencies --description "Dependency and toolchain updates" --color 0366d6 --force >/dev/null
+          existing="$(gh pr list --head "$BRANCH" --base "$BASE" --state open --json number --jq '.[0].number')"
+          if [ -n "$existing" ]; then
+            gh pr edit "$existing" --title "$PR_TITLE" --body-file /tmp/summary.md
+            echo "Refreshed PR #$existing"
+          else
+            gh pr create --head "$BRANCH" --base "$BASE" --title "$PR_TITLE" --body-file /tmp/summary.md --label dependencies
+          fi

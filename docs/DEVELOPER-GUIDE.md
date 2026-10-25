@@ -75,6 +75,23 @@ The build compiles Rust to WASM, generates its web bindings, bundles the React i
 
 The scripts invoke npm's JavaScript entry point through Node without a shell. If an unusual Node installation prevents discovery, set `RIVIAN_NPM_CLI` to the absolute path of its `npm-cli.js`. Cargo's default `target` directory is assumed by the build scripts; do not override `CARGO_TARGET_DIR`.
 
+## Dependency updates
+
+Dependency checks run nightly. Dependabot (`.github/dependabot.yml`) proposes
+Cargo, npm (`ui/`) and GitHub Actions updates as pull requests, grouping minor
+and patch bumps and keeping the SHA-pinned actions pinned. The
+`Upstream toolchain check` workflow compares `rust-toolchain.toml` with the
+current stable channel and opens one `auto/upstream-toolchain` pull request
+that bumps the toolchain in `rust-toolchain.toml`, both CI workflows and this
+guide together; `node scripts/upstream-toolchain.mjs` reports locally, `--apply`
+rewrites the pins. The Verify workflow validates every such PR with the full
+pinned build. Evidence in `docs/STATUS.md`, `docs/THIRD-PARTY-NOTICES.md` and
+`docs/dependency-licenses/` describes the toolchain it was gathered with and is
+refreshed by hand after a bump. For the Verify workflow to run on the bot's PRs,
+add a fine-grained personal access token (contents and pull requests: write) as
+the `UPSTREAM_BUMP_TOKEN` repository secret; the default `GITHUB_TOKEN` can open
+the PR but cannot trigger workflows on it.
+
 ## Verify
 
 `node scripts/verify.mjs` runs formatting checks, the release build, clippy with warnings rejected, workspace tests, TypeScript checking, UI unit tests, delivery/measurement/release regression tests and native/WASM parity. The parity check runs the **compiled WASM** in Node, compares validation and Parallax/error fixtures, catalogs and the reviewed inventory with native Rust output, and checks that a 64 MiB memory ceiling is enforced. It can also run alone after a build:
@@ -105,7 +122,7 @@ and corresponding source. Configuration is not evidence that those CI jobs have 
 | `crates/rivian-api` | Fixed HTTPS/WebSocket transport, authentication, native OS vault, account/resource authority and lifecycle epochs |
 | `ui` | React/TypeScript interface and native-host HTTP adapter |
 | `fixtures` | Synthetic fixtures consumed by native/WASM verification |
-| `scripts` | Portable dependency setup, build and verification |
+| `scripts` | Portable dependency setup, build and verification; `upstream-toolchain.mjs` checks the pinned Rust toolchain against stable |
 | `docs` | Implementation status and review evidence |
 
 ## Package a build
