@@ -53,7 +53,7 @@ details.
 
 ## Build from source
 
-Install [Rust through rustup](https://rustup.rs/) and [Node.js 24 or newer with npm](https://nodejs.org/). Rust is pinned to 1.99.0, with rustfmt, clippy and the `wasm32-unknown-unknown` target in `rust-toolchain.toml`.
+Install [Rust through rustup](https://rustup.rs/) and [Node.js 24 or newer with npm](https://nodejs.org/). Rust is pinned to 1.99.1, with rustfmt, clippy and the `wasm32-unknown-unknown` target in `rust-toolchain.toml`.
 
 - **Windows:** use the MSVC Rust toolchain and Visual Studio Build Tools with the C++ desktop workload and Windows SDK. PowerShell works for the commands below.
 - **macOS:** install Xcode Command Line Tools (`xcode-select --install`).

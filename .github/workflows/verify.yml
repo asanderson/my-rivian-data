@@ -42,7 +42,7 @@ jobs:
           RIVIAN_NATIVE_INSTALLER_TESTS: '1'
         run: node --test scripts/tests/delivery.test.mjs
       - name: Install pinned Rust toolchain
-        run: rustup toolchain install 1.99.0 --profile minimal --component rustfmt --component clippy --target wasm32-unknown-unknown
+        run: rustup toolchain install 1.99.1 --profile minimal --component rustfmt --component clippy --target wasm32-unknown-unknown
       - name: Install locked dependencies and matching WASM CLI
         run: node scripts/setup.mjs
       - name: Build and verify
