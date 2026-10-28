@@ -37,6 +37,11 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # Push with the PAT too (not just the gh calls): GitHub never starts
+          # workflow runs for pushes made with GITHUB_TOKEN, and refuses pushes
+          # that touch .github/workflows/ unless the token has the workflows scope.
+          token: ${{ secrets.UPSTREAM_BUMP_TOKEN || secrets.GITHUB_TOKEN }}
+        with:
           persist-credentials: true
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
