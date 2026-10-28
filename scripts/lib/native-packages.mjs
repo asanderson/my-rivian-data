@@ -3,6 +3,24 @@ import path from 'node:path';
 import { root, run } from './process.mjs';
 import { signMac, signWindows } from './signing.mjs';
 
+// GitHub's macOS runners intermittently answer `hdiutil: create failed - Resource busy`:
+// `create -srcfolder` mounts a scratch image to populate it, Spotlight starts indexing
+// that volume, and the detach that follows is refused. -nospotlight keeps the indexer
+// off the scratch volume; the bounded retry covers whatever else (XProtect scans of the
+// freshly written tree) holds it, since nothing about the input changes between attempts
+// and -ov overwrites a partial image.
+export function createDiskImage(imageRoot, dmg, { attempts = 5, delayMs = 5000, runner = run } = {}) {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return runner('hdiutil', ['create', '-ov', '-nospotlight', '-format', 'UDZO', '-volname', 'My Rivian Data', '-srcfolder', imageRoot, dmg]);
+    } catch (error) {
+      if (attempt >= attempts) throw error;
+      console.log(`hdiutil create failed (attempt ${attempt} of ${attempts}): ${error.message}; retrying in ${delayMs / 1000}s`);
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, delayMs);
+    }
+  }
+}
+
 export function nativePackages({ staging, output, name, version, revision, signed }) {
   const artifacts = [];
   if (process.platform === 'win32') {
@@ -25,7 +43,7 @@ export function nativePackages({ staging, output, name, version, revision, signe
     symlinkSync('/Applications', path.join(imageRoot, 'Applications'));
     const dmg = path.join(output, `${name}.dmg`);
     if (signed) signMac(app, 'app');
-    run('hdiutil', ['create', '-ov', '-format', 'UDZO', '-volname', 'My Rivian Data', '-srcfolder', imageRoot, dmg]);
+    createDiskImage(imageRoot, dmg);
     if (signed) signMac(dmg, 'dmg');
     artifacts.push(dmg);
   } else if (process.platform === 'linux') {
