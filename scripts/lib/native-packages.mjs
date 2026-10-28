@@ -3,14 +3,16 @@ import path from 'node:path';
 import { root, run } from './process.mjs';
 import { signMac, signWindows } from './signing.mjs';
 
-// GitHub's macOS runners intermittently answer `hdiutil: create failed - Resource busy`
-// while Spotlight or XProtect still hold the freshly written source folder; the
-// identical command succeeds moments later. Nothing about the input changes between
-// attempts and -ov overwrites a partial image, so a short bounded retry is the whole fix.
+// GitHub's macOS runners intermittently answer `hdiutil: create failed - Resource busy`:
+// `create -srcfolder` mounts a scratch image to populate it, Spotlight starts indexing
+// that volume, and the detach that follows is refused. -nospotlight keeps the indexer
+// off the scratch volume; the bounded retry covers whatever else (XProtect scans of the
+// freshly written tree) holds it, since nothing about the input changes between attempts
+// and -ov overwrites a partial image.
 export function createDiskImage(imageRoot, dmg, { attempts = 5, delayMs = 5000, runner = run } = {}) {
   for (let attempt = 1; ; attempt += 1) {
     try {
-      return runner('hdiutil', ['create', '-ov', '-format', 'UDZO', '-volname', 'My Rivian Data', '-srcfolder', imageRoot, dmg]);
+      return runner('hdiutil', ['create', '-ov', '-nospotlight', '-format', 'UDZO', '-volname', 'My Rivian Data', '-srcfolder', imageRoot, dmg]);
     } catch (error) {
       if (attempt >= attempts) throw error;
       console.log(`hdiutil create failed (attempt ${attempt} of ${attempts}): ${error.message}; retrying in ${delayMs / 1000}s`);

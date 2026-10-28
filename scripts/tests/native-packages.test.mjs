@@ -11,7 +11,7 @@ test('DMG creation retries a busy hdiutil a bounded number of times and then giv
   };
   createDiskImage('/tmp/image-root', '/tmp/out.dmg', { attempts: 3, delayMs: 1, runner: flaky(2) });
   assert.equal(calls.length, 3);
-  assert.deepEqual(calls[0], ['hdiutil', 'create', '-ov', '-format', 'UDZO', '-volname', 'My Rivian Data', '-srcfolder', '/tmp/image-root', '/tmp/out.dmg']);
+  assert.deepEqual(calls[0], ['hdiutil', 'create', '-ov', '-nospotlight', '-format', 'UDZO', '-volname', 'My Rivian Data', '-srcfolder', '/tmp/image-root', '/tmp/out.dmg']);
   assert.deepEqual(calls[2], calls[0], 'every attempt runs the identical command');
 
   calls.length = 0;
